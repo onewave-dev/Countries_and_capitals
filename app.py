@@ -1,7 +1,4 @@
 import os
-import asyncio
-import orjson
-from typing import Any, Dict
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -34,16 +31,19 @@ application: Application = (
 )
 
 # ===== Data Loading =====
-DATA: Dict[str, Any] = {}
-def load_data():
-    import json, pathlib
+from bot.state import DataSource
+
+DATA: DataSource
+
+
+def load_data() -> DataSource:
+    import pathlib
+
     path = pathlib.Path(__file__).parent / "data" / "capitals.json"
     if not path.exists():
         raise RuntimeError("data/capitals.json missing")
-    # orjson for speed; fallback to json if needed
-    with open(path, "rb") as f:
-        content = f.read()
-    return orjson.loads(content)
+    return DataSource.load(path)
+
 
 DATA = load_data()
 

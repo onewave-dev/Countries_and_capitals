@@ -1,24 +1,17 @@
 import random
-from typing import Any, Dict
 
-def pick_question(data: Dict[str, Any], continent: str | None, mode: str):
+from .state import DataSource
+
+
+def pick_question(data: DataSource, continent: str | None, mode: str):
+    """Generate a question based on the provided mode."""
     # mode: "country_to_capital" | "capital_to_country" | "mixed"
-    countries = []
-    if continent and continent in data["countries_by_continent"]:
-        countries = data["countries_by_continent"][continent]
-    else:
-        # объединяем все
-        seen = set()
-        for v in data["countries_by_continent"].values():
-            for c in v:
-                seen.add(c)
-        countries = list(seen)
-
+    countries = data.countries(continent)
     if not countries:
         raise RuntimeError("No countries for selected continent")
 
     country = random.choice(countries)
-    capital = data["capital_by_country"][country]
+    capital = data.capital_by_country[country]
 
     question_type = mode
     if mode == "mixed":
@@ -26,8 +19,7 @@ def pick_question(data: Dict[str, Any], continent: str | None, mode: str):
 
     if question_type == "country_to_capital":
         correct = capital
-        # отвлекающие — другие столицы из пула
-        pool = [data["capital_by_country"][c] for c in countries if c != country]
+        pool = [c for c in data.capitals(continent) if c != capital]
     else:
         correct = country
         pool = [c for c in countries if c != country]
@@ -47,5 +39,5 @@ def pick_question(data: Dict[str, Any], continent: str | None, mode: str):
         "capital": capital,
         "prompt": prompt,
         "correct": correct,
-        "options": options
+        "options": options,
     }
