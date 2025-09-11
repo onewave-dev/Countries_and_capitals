@@ -162,7 +162,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if selected == current["answer"]:
             get_user_stats(context.user_data).to_repeat.discard(item)
             session.stats["known"] += 1
-            await q.answer("✅ Верно")
+            await q.answer("✅ Верно", show_alert=True)
         else:
             session.unknown_set.add(item)
             add_to_repeat(context.user_data, {item})

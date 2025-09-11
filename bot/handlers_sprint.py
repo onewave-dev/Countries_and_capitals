@@ -127,7 +127,7 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session.questions_asked += 1
         if option == session.current["correct"]:
             session.score += 1
-            await q.answer("✅ Верно")
+            await q.answer("✅ Верно", show_alert=True)
             logger.debug(
                 "Sprint correct answer by user %s: score=%d questions=%d",
                 session.user_id,
