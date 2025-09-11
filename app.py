@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -36,6 +37,8 @@ application: Application = (
     .concurrent_updates(True)
     .build()
 )
+
+startup_lock = asyncio.Lock()
 
 # ===== Data Loading =====
 from bot.state import DataSource
@@ -126,13 +129,14 @@ async def telegram_webhook(request: Request):
     if token != WEBHOOK_SECRET:
         raise HTTPException(403, "forbidden")
 
-    if not getattr(application, "_initialized", False):
-        await application.initialize()
-    if not application.running:
-        await application.start()
+    if not getattr(application, "_initialized", False) or not application.running:
+        raise HTTPException(503, "service unavailable")
 
     data = await request.json()
     update = Update.de_json(data, application.bot)
+
+    if not application.running:
+        raise HTTPException(503, "service unavailable")
     await application.process_update(update)
     return {"ok": True}
 
@@ -140,8 +144,11 @@ async def telegram_webhook(request: Request):
 @app.on_event("startup")
 async def on_startup():
     logger.info("Application startup")
-    await application.initialize()
-    await application.start()
+    async with startup_lock:
+        if not getattr(application, "_initialized", False):
+            await application.initialize()
+        if not application.running:
+            await application.start()
 
     if PUBLIC_URL:
         expected_url = f"{PUBLIC_URL}{WEBHOOK_PATH}?secret_token={WEBHOOK_SECRET}"
