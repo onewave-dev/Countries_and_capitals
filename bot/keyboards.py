@@ -115,6 +115,15 @@ def cards_kb(options: list[str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def cards_answer_kb() -> InlineKeyboardMarkup:
+    """Keyboard shown after revealing the answer."""
+    rows = [
+        [InlineKeyboardButton("Продолжить", callback_data="cards:next")],
+        [InlineKeyboardButton("Завершить", callback_data="cards:finish")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 def cards_repeat_kb() -> InlineKeyboardMarkup:
     """Keyboard shown after session to repeat unknown cards."""
     rows = [
