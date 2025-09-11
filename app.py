@@ -108,6 +108,11 @@ class TelegramUpdate(BaseModel):
 async def healthz():
     return {"ok": True}
 
+
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
 @app.get("/set_webhook")
 async def set_webhook():
     if not PUBLIC_URL:
@@ -163,7 +168,21 @@ async def on_startup():
     if PUBLIC_URL:
         expected_url = f"{PUBLIC_URL}{WEBHOOK_PATH}?secret_token={WEBHOOK_SECRET}"
         info = await tg_call(application.bot.get_webhook_info)
-        if info.url != expected_url:
+        if info.last_error_message:
+            logger.warning(
+                "Clearing webhook due to error: %s",
+                info.last_error_message,
+            )
+            await tg_call(
+                application.bot.delete_webhook,
+                drop_pending_updates=True,
+            )
+            await tg_call(
+                application.bot.set_webhook,
+                url=expected_url,
+                allowed_updates=[],
+            )
+        elif info.url != expected_url:
             logger.info(
                 "Re-registering webhook: expected %s, got %s",
                 expected_url,

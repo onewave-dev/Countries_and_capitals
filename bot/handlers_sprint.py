@@ -5,6 +5,8 @@ import time
 
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.error import TelegramError
+from httpx import HTTPError
 
 from app import DATA
 from .state import SprintSession, record_sprint_result
@@ -27,11 +29,19 @@ async def _ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     if update.callback_query:
         q = update.callback_query
-        await q.edit_message_text(question["prompt"], reply_markup=reply_markup)
+        try:
+            await q.edit_message_text(question["prompt"], reply_markup=reply_markup)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send sprint question: %s", e)
+            return
     else:
-        await update.effective_message.reply_text(
-            question["prompt"], reply_markup=reply_markup
-        )
+        try:
+            await update.effective_message.reply_text(
+                question["prompt"], reply_markup=reply_markup
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send sprint question: %s", e)
+            return
 
 
 async def _sprint_timeout(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -50,10 +60,14 @@ async def _sprint_timeout(context: ContextTypes.DEFAULT_TYPE) -> None:
         session.questions_asked,
     )
 
-    await context.bot.send_message(
-        user_id,
-        f"⏱ Время вышло! Ваш результат: {session.score} правильных из {session.questions_asked}",
-    )
+    try:
+        await context.bot.send_message(
+            user_id,
+            f"⏱ Время вышло! Ваш результат: {session.score} правильных из {session.questions_asked}",
+        )
+    except (TelegramError, HTTPError) as e:
+        logger.warning("Failed to send sprint timeout message: %s", e)
+        return
 
     record_sprint_result(user_data, session.score, session.questions_asked)
 
@@ -100,7 +114,10 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     action = parts[1]
     session: SprintSession | None = context.user_data.get("sprint_session")
     if not session or not hasattr(session, "current"):
-        await q.edit_message_text("Спринт не найден")
+        try:
+            await q.edit_message_text("Спринт не найден")
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to notify missing sprint: %s", e)
         return
 
     if action == "opt":
