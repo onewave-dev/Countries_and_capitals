@@ -87,3 +87,15 @@ def cards_repeat_kb() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(rows)
 
+
+def sprint_kb(options: list[str], allow_skip: bool = True) -> InlineKeyboardMarkup:
+    """Keyboard for sprint questions with four options and optional skip."""
+    buttons = [
+        InlineKeyboardButton(opt, callback_data=f"sprint:opt:{i}")
+        for i, opt in enumerate(options)
+    ]
+    rows = [buttons[:2], buttons[2:4]]
+    if allow_skip:
+        rows.append([InlineKeyboardButton("Пропустить", callback_data="sprint:skip")])
+    return InlineKeyboardMarkup(rows)
+
