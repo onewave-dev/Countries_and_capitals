@@ -105,3 +105,76 @@ class CoopSession:
     team_score: int = 0
     bot_score: int = 0
     jobs: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class SprintResult:
+    """Single sprint game result."""
+
+    score: int
+    total: int
+
+
+@dataclass
+class UserStats:
+    """Aggregated per-user statistics kept in ``user_data``."""
+
+    sprint_results: List[SprintResult] = field(default_factory=list)
+    to_repeat: Set[str] = field(default_factory=set)
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "sprint_results": [r.__dict__ for r in self.sprint_results],
+            "to_repeat": list(self.to_repeat),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "UserStats":
+        results = [SprintResult(**r) for r in data.get("sprint_results", [])]
+        to_repeat = set(data.get("to_repeat", []))
+        return cls(results, to_repeat)
+
+
+def get_user_stats(user_data: Dict[str, Any]) -> UserStats:
+    """Retrieve ``UserStats`` object from ``user_data`` creating if needed."""
+
+    stats = user_data.get("stats")
+    if isinstance(stats, UserStats):
+        return stats
+    if isinstance(stats, dict):
+        stats = UserStats.from_dict(stats)
+    else:
+        stats = UserStats()
+    user_data["stats"] = stats
+    return stats
+
+
+def record_sprint_result(user_data: Dict[str, Any], score: int, total: int) -> None:
+    """Append a sprint result to ``user_data`` stats."""
+
+    stats = get_user_stats(user_data)
+    stats.sprint_results.append(SprintResult(score=score, total=total))
+
+
+def add_to_repeat(user_data: Dict[str, Any], items: Iterable[str]) -> None:
+    """Add flashcard items to the per-user repeat list."""
+
+    stats = get_user_stats(user_data)
+    stats.to_repeat.update(items)
+
+
+class StatsStorage:
+    """Optional JSON-based persistence for ``UserStats``."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+
+    def load(self) -> Dict[int, UserStats]:
+        if not self.path.exists():
+            return {}
+        raw = orjson.loads(self.path.read_bytes())
+        return {int(uid): UserStats.from_dict(data) for uid, data in raw.items()}
+
+    def save(self, stats: Dict[int, UserStats]) -> None:
+        raw = {str(uid): s.as_dict() for uid, s in stats.items()}
+        self.path.write_bytes(orjson.dumps(raw))

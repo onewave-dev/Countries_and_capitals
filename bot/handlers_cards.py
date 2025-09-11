@@ -8,7 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from app import DATA
-from .state import CardSession
+from .state import CardSession, add_to_repeat, get_user_stats
 from .questions import make_card_question
 from .keyboards import cards_kb, cards_repeat_kb
 
@@ -131,13 +131,24 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if action == "know":
+        item = (
+            current["country"]
+            if current["type"] == "country_to_capital"
+            else current["capital"]
+        )
+        get_user_stats(context.user_data).to_repeat.discard(item)
         session.stats["known"] += 1
         await _next_card(update, context)
         return
 
     if action == "dont":
-        item = current["country"] if current["type"] == "country_to_capital" else current["capital"]
+        item = (
+            current["country"]
+            if current["type"] == "country_to_capital"
+            else current["capital"]
+        )
         session.unknown_set.add(item)
+        add_to_repeat(context.user_data, {item})
         await _next_card(update, context)
         return
 

@@ -58,6 +58,7 @@ from bot.handlers_menu import cmd_start, cb_menu
 from bot.handlers_cards import cb_cards
 from bot.handlers_sprint import cb_sprint
 from bot.handlers_coop import cb_coop, cmd_coop_capitals, cmd_coop_test
+from bot.handlers_stats import cmd_stats
 
 # Register handlers
 application.add_handler(CommandHandler("start", cmd_start))
@@ -67,6 +68,7 @@ application.add_handler(CallbackQueryHandler(cb_sprint, pattern="^sprint:"))
 application.add_handler(CallbackQueryHandler(cb_coop, pattern="^coop:"))
 application.add_handler(CommandHandler("coop_capitals", cmd_coop_capitals))
 application.add_handler(CommandHandler("coop_test", cmd_coop_test))
+application.add_handler(CommandHandler("stats", cmd_stats))
 
 
 async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
