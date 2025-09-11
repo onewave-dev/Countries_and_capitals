@@ -5,6 +5,7 @@ import random
 from typing import Optional
 
 from telegram import Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from app import DATA
@@ -127,13 +128,20 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     current = session.current
     if action == "show":
-        await q.edit_message_text(
-            f"{current['prompt']}\n\n<b>{current['answer']}</b>",
-            parse_mode="HTML",
-            reply_markup=cards_kb(),
-        )
+        target_text_plain = f"{current['prompt']}\n\n{current['answer']}"
+        if q.message.text == target_text_plain:
+            logger.debug("Skipping edit for user %s: answer already shown", session.user_id)
+            await q.answer()
+            return
+        try:
+            await q.edit_message_text(
+                f"{current['prompt']}\n\n<b>{current['answer']}</b>",
+                parse_mode="HTML",
+                reply_markup=cards_kb(),
+            )
+        except BadRequest:
+            logger.debug("Ignoring BadRequest for duplicate edit for user %s", session.user_id)
         return
-
     if action == "know":
         item = (
             current["country"]
