@@ -57,7 +57,7 @@ from bot.keyboards import main_menu_kb
 from bot.handlers_menu import cmd_start, cb_menu
 from bot.handlers_cards import cb_cards
 from bot.handlers_sprint import cb_sprint
-from bot.handlers_coop import cb_coop
+from bot.handlers_coop import cb_coop, cmd_coop_capitals, cmd_coop_test
 
 # Register handlers
 application.add_handler(CommandHandler("start", cmd_start))
@@ -65,6 +65,8 @@ application.add_handler(CallbackQueryHandler(cb_menu, pattern="^menu:"))
 application.add_handler(CallbackQueryHandler(cb_cards, pattern="^cards:"))
 application.add_handler(CallbackQueryHandler(cb_sprint, pattern="^sprint:"))
 application.add_handler(CallbackQueryHandler(cb_coop, pattern="^coop:"))
+application.add_handler(CommandHandler("coop_capitals", cmd_coop_capitals))
+application.add_handler(CommandHandler("coop_test", cmd_coop_test))
 
 
 async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
