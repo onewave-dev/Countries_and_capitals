@@ -114,10 +114,10 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle all ``^cards:`` callbacks."""
 
     q = update.callback_query
-    await q.answer()
 
     parts = q.data.split(":")
     if len(parts) == 3 and parts[1] != "opt":
+        await q.answer()
         # Session setup: cards:<continent>:<direction>
         _, continent, direction = parts
         continent_filter: Optional[str] = None if continent == "Весь мир" else continent
@@ -142,6 +142,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     session: CardSession | None = context.user_data.get("card_session")
     if not session or not hasattr(session, "current"):
+        await q.answer()
         try:
             await q.edit_message_text("Сессия не найдена")
         except (TelegramError, HTTPError) as e:
@@ -161,18 +162,23 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if selected == current["answer"]:
             get_user_stats(context.user_data).to_repeat.discard(item)
             session.stats["known"] += 1
+            await q.answer("✅ Верно")
         else:
             session.unknown_set.add(item)
             add_to_repeat(context.user_data, {item})
+            await q.answer(
+                f"❌ Неверно. Правильный ответ: {current['answer']}",
+                show_alert=True,
+            )
         await _next_card(update, context)
         return
 
     action = parts[1]
     if action == "show":
+        await q.answer()
         target_text_plain = f"{current['prompt']}\n\n{current['answer']}"
         if q.message.text == target_text_plain:
             logger.debug("Skipping edit for user %s: answer already shown", session.user_id)
-            await q.answer()
             return
         try:
             await q.edit_message_text(
@@ -190,17 +196,20 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if action == "skip":
+        await q.answer()
         item = current["country"] if current["type"] == "country_to_capital" else current["capital"]
         session.queue.append(item)
         await _next_card(update, context)
         return
 
     if action == "finish":
+        await q.answer()
         await _finish_session(update, context)
         context.user_data.pop("card_session", None)
         return
 
     if action == "repeat" and session.unknown_set:
+        await q.answer()
         session.queue = list(session.unknown_set)
         random.shuffle(session.queue)
         session.unknown_set.clear()

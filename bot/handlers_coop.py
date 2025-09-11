@@ -162,7 +162,6 @@ async def cmd_coop_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
-    await q.answer()
 
     parts = q.data.split(":")
     action = parts[1]
@@ -173,6 +172,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session_id = parts[2]
         session = sessions.get(session_id)
         if not session:
+            await q.answer()
             try:
                 await q.edit_message_text("Матч не найден")
             except (TelegramError, HTTPError) as e:
@@ -185,6 +185,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if len(session.players) >= 2:
             await q.answer("Уже хватает игроков")
             return
+        await q.answer()
         session.players.append(user_id)
         if len(session.players) == 2:
             try:
@@ -211,11 +212,13 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         rounds = int(parts[3])
         session = sessions.get(session_id)
         if not session:
+            await q.answer()
             try:
                 await q.edit_message_text("Матч не найден")
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to notify missing coop match: %s", e)
             return
+        await q.answer()
         session.total_rounds = rounds
         try:
             await q.edit_message_text(
@@ -231,6 +234,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         diff = parts[3]
         session = sessions.get(session_id)
         if not session:
+            await q.answer()
             try:
                 await q.edit_message_text("Матч не найден")
             except (TelegramError, HTTPError) as e:
@@ -238,6 +242,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         session.difficulty = diff
         session.current_round = 1
+        await q.answer()
         try:
             await q.edit_message_text("Матч начинается!")
         except (TelegramError, HTTPError) as e:
@@ -252,6 +257,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         idx = int(parts[4])
         session = sessions.get(session_id)
         if not session or not hasattr(session, "current_question"):
+            await q.answer()
             try:
                 await q.edit_message_text("Матч не найден")
             except (TelegramError, HTTPError) as e:
@@ -268,6 +274,12 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         correct = option == session.current_question["correct"]
         if correct:
             session.team_score += 1
+            await q.answer("✅ Верно")
+        else:
+            await q.answer(
+                f"❌ Неверно. Правильный ответ: {session.current_question['correct']}",
+                show_alert=True,
+            )
 
         if session.turn == 0:
             session.turn = 1
