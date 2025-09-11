@@ -274,7 +274,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         correct = option == session.current_question["correct"]
         if correct:
             session.team_score += 1
-            await q.answer("✅ Верно")
+            await q.answer("✅ Верно", show_alert=True)
         else:
             await q.answer(
                 f"❌ Неверно. Правильный ответ: {session.current_question['correct']}",
