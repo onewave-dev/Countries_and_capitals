@@ -10,6 +10,8 @@ from telegram.ext import (
     CommandHandler, CallbackQueryHandler
 )
 
+from bot.utils import tg_call
+
 # ===== ENV =====
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -77,7 +79,7 @@ async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     expected_url = f"{PUBLIC_URL}{WEBHOOK_PATH}?secret_token={WEBHOOK_SECRET}"
-    info = await context.bot.get_webhook_info()
+    info = await tg_call(context.bot.get_webhook_info)
 
     if info.url != expected_url:
         logger.warning(
@@ -107,12 +109,14 @@ async def set_webhook():
     if not PUBLIC_URL:
         raise HTTPException(400, "PUBLIC_URL is not set")
     url = f"{PUBLIC_URL}{WEBHOOK_PATH}?secret_token={WEBHOOK_SECRET}"
-    await application.bot.set_webhook(url=url, allowed_updates=[])
+    await tg_call(application.bot.set_webhook, url=url, allowed_updates=[])
+    logger.info("Webhook registered at %s", url)
     return {"ok": True, "url": url}
 
 @app.get("/reset_webhook")
 async def reset_webhook():
-    await application.bot.delete_webhook(drop_pending_updates=False)
+    await tg_call(application.bot.delete_webhook, drop_pending_updates=False)
+    logger.info("Webhook deleted")
     return {"ok": True}
 
 @app.post(WEBHOOK_PATH)
@@ -130,20 +134,23 @@ async def telegram_webhook(request: Request):
 # ===== Lifespan =====
 @app.on_event("startup")
 async def on_startup():
+    logger.info("Application startup")
     await application.initialize()
     await application.start()
 
     if PUBLIC_URL:
         expected_url = f"{PUBLIC_URL}{WEBHOOK_PATH}?secret_token={WEBHOOK_SECRET}"
-        info = await application.bot.get_webhook_info()
+        info = await tg_call(application.bot.get_webhook_info)
         if info.url != expected_url:
             logger.info(
                 "Re-registering webhook: expected %s, got %s",
                 expected_url,
                 info.url,
             )
-            await application.bot.set_webhook(
-                url=expected_url, allowed_updates=[]
+            await tg_call(
+                application.bot.set_webhook,
+                url=expected_url,
+                allowed_updates=[],
             )
     else:
         logger.warning("PUBLIC_URL is not set; webhook check skipped")
@@ -154,5 +161,6 @@ async def on_startup():
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    logger.info("Application shutdown")
     await application.stop()
     await application.shutdown()
