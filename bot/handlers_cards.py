@@ -84,12 +84,13 @@ async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         unknown_lines = []
         for item in sorted(session.unknown_set):
             if item in DATA.capital_by_country:
-                flag = get_country_flag(item)
-                pair = f"{flag} {item} — {DATA.capital_by_country[item]}".strip()
+                country = item
+                capital = DATA.capital_by_country[item]
             else:
                 country = DATA.country_by_capital[item]
-                flag = get_country_flag(country)
-                pair = f"{item} — {flag} {country}".strip()
+                capital = item
+            flag = get_country_flag(country)
+            pair = f"{flag} {country} — Столица: {capital}"
             unknown_lines.append(pair)
         text += "\nНеизвестные:\n" + "\n".join(unknown_lines)
         reply_markup = cards_repeat_kb()
@@ -161,8 +162,9 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         selected = current["options"][index]
         if selected == current["answer"]:
-            get_user_stats(context.user_data).to_repeat.discard(item)
-            session.stats["known"] += 1
+            if item not in session.unknown_set:
+                get_user_stats(context.user_data).to_repeat.discard(item)
+                session.stats["known"] += 1
             await q.answer("✅ Верно", show_alert=True)
         else:
             session.unknown_set.add(item)
@@ -177,6 +179,9 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     action = parts[1]
     if action == "show":
         await q.answer()
+        item = current["country"] if current["type"] == "country_to_capital" else current["capital"]
+        session.unknown_set.add(item)
+        add_to_repeat(context.user_data, {item})
         target_text_plain = f"{current['prompt']}\n\n{current['answer']}"
         if q.message.text == target_text_plain:
             logger.debug("Skipping edit for user %s: answer already shown", session.user_id)
@@ -199,6 +204,8 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if action == "skip":
         await q.answer()
         item = current["country"] if current["type"] == "country_to_capital" else current["capital"]
+        session.unknown_set.add(item)
+        add_to_repeat(context.user_data, {item})
         session.queue.append(item)
         await _next_card(update, context)
         return
