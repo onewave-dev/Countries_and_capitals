@@ -84,6 +84,17 @@ def direction_kb(prefix: str, continent: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def sprint_duration_kb(continent: str) -> InlineKeyboardMarkup:
+    """Keyboard for choosing sprint duration."""
+
+    rows = [
+        [InlineKeyboardButton("30 секунд", callback_data=f"sprint:{continent}:30")],
+        [InlineKeyboardButton("60 секунд", callback_data=f"sprint:{continent}:60")],
+        [InlineKeyboardButton("90 секунд", callback_data=f"sprint:{continent}:90")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 def cards_kb(options: list[str]) -> InlineKeyboardMarkup:
     """Keyboard for flash-card questions with answer options."""
     wrapped = [wrap_button_text(opt) for opt in options]
