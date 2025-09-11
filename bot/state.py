@@ -93,6 +93,7 @@ class SprintSession:
 
 @dataclass
 class CoopSession:
+    session_id: str
     chat_id: int
     players: List[int] = field(default_factory=list)
     continent_filter: str | None = None
