@@ -3,7 +3,9 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from app import DATA
 from .state import get_user_stats
+from .flags import get_country_flag
 
 
 async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -24,6 +26,13 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lines.append(f"Карточек к повторению: {len(stats.to_repeat)}")
     if stats.to_repeat:
         sample = list(sorted(stats.to_repeat))[:10]
-        lines.append("\n".join(["К повторению:"] + sample))
+        lines.append("К повторению:")
+        for item in sample:
+            if item in DATA.capital_by_country:
+                lines.append(f"{get_country_flag(item)} {item}".strip())
+            else:
+                country = DATA.country_by_capital[item]
+                flag = get_country_flag(country)
+                lines.append(f"{item} — {flag} {country}".strip())
 
     await update.effective_message.reply_text("\n".join(lines))

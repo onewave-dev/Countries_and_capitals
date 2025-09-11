@@ -19,6 +19,7 @@ from .keyboards import (
     coop_difficulty_kb,
     coop_answer_kb,
 )
+from .flags import get_country_flag
 
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -246,11 +247,18 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if bot_correct:
             session.bot_score += 1
 
+        if session.current_question["type"] == "country_to_capital":
+            country = session.current_question["country"]
+            flag = get_country_flag(country)
+            correct_display = f"{session.current_question['correct']} — {flag} {country}".strip()
+        else:
+            correct_display = session.current_question["correct"]
+
         await context.bot.send_message(
             session.chat_id,
             (
                 f"Бот {'угадал' if bot_correct else 'ошибся'} — правильный ответ: "
-                f"{session.current_question['correct']}\n"
+                f"{correct_display}\n"
                 f"Счёт: Команда {session.team_score} — Бот {session.bot_score} "
                 f"(Раунд {session.current_round}/{session.total_rounds})"
             ),
