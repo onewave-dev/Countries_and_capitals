@@ -167,9 +167,14 @@ async def on_startup():
     else:
         logger.warning("PUBLIC_URL is not set; webhook check skipped")
 
-    application.job_queue.run_repeating(
-        check_webhook, interval=600, first=600
-    )
+    if application.job_queue:
+        application.job_queue.run_repeating(
+            check_webhook, interval=600, first=600
+        )
+    else:
+        logger.warning(
+            "Job queue is not available; skipping webhook check scheduling"
+        )
 
 @app.on_event("shutdown")
 async def on_shutdown():
