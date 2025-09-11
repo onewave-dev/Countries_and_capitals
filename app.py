@@ -126,6 +126,11 @@ async def telegram_webhook(request: Request):
     if token != WEBHOOK_SECRET:
         raise HTTPException(403, "forbidden")
 
+    if not getattr(application, "_initialized", False):
+        await application.initialize()
+    if not application.running:
+        await application.start()
+
     data = await request.json()
     update = Update.de_json(data, application.bot)
     await application.process_update(update)
