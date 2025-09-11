@@ -4,3 +4,4 @@ uvicorn>=0.30
 pydantic>=2.6
 orjson>=3.10
 python-dotenv>=1.0
+country_converter>=1.0
