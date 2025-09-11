@@ -12,8 +12,9 @@ from httpx import HTTPError
 from app import DATA
 from .state import CardSession, add_to_repeat, get_user_stats
 from .questions import make_card_question
-from .keyboards import cards_kb, cards_repeat_kb
+from .keyboards import cards_kb, cards_repeat_kb, main_menu_kb
 from .flags import get_country_flag
+from .handlers_menu import WELCOME
 
 
 logger = logging.getLogger(__name__)
@@ -205,7 +206,6 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if action == "finish":
         await q.answer()
         await _finish_session(update, context)
-        context.user_data.pop("card_session", None)
         return
 
     if action == "repeat" and session.unknown_set:
@@ -215,6 +215,15 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session.unknown_set.clear()
         session.stats = {"shown": 0, "known": 0}
         await _next_card(update, context)
+        return
+
+    if action == "menu":
+        await q.answer()
+        context.user_data.pop("card_session", None)
+        try:
+            await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to return to menu: %s", e)
         return
 
     await q.answer()
