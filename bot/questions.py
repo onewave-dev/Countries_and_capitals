@@ -47,13 +47,15 @@ def pick_question(data: DataSource, continent: str | None, mode: str):
     }
 
 
-def make_card_question(data: DataSource, item: str, mode: str):
+def make_card_question(
+    data: DataSource, item: str, mode: str, continent: str | None
+):
     """Return a flash-card style question for a specific item.
 
     ``item`` is either a country or a capital depending on ``mode``. For the
     mixed mode the direction is determined by the type of ``item`` itself.
-    The returned dictionary mirrors :func:`pick_question` but without
-    distractors.
+    The returned dictionary mirrors :func:`pick_question` but generates answer
+    options for multiple choice cards.
     """
 
     question_type = mode
@@ -67,17 +69,28 @@ def make_card_question(data: DataSource, item: str, mode: str):
         capital = data.capital_by_country[country]
         flag = get_country_flag(country)
         prompt = f"Какая столица у {flag} {country}?".strip()
-        answer = capital
+        correct = capital
+        pool = [c for c in data.capitals(continent) if c != capital]
+        distractors = random.sample(pool, k=min(3, len(pool)))
+        options = distractors + [correct]
     else:
         capital = item
         country = data.country_by_capital[capital]
         prompt = f"К какой стране относится {capital}?"
-        answer = f"{get_country_flag(country)} {country}".strip()
+        correct_country = country
+        pool = [c for c in data.countries(continent) if c != country]
+        distractors = random.sample(pool, k=min(3, len(pool)))
+        opts = distractors + [correct_country]
+        options = [f"{get_country_flag(o)} {o}".strip() for o in opts]
+        correct = f"{get_country_flag(correct_country)} {correct_country}".strip()
+
+    random.shuffle(options)
 
     return {
         "type": question_type,
         "country": country,
         "capital": capital,
         "prompt": prompt,
-        "answer": answer,
+        "correct": correct,
+        "options": options,
     }

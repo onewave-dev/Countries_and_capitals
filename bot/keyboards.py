@@ -65,17 +65,17 @@ def direction_kb(prefix: str, continent: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def cards_kb() -> InlineKeyboardMarkup:
-    """Controls for a flash-card question."""
-    rows = [
-        [InlineKeyboardButton("Показать ответ", callback_data="cards:show")],
-        [
-            InlineKeyboardButton("✅ Знаю", callback_data="cards:know"),
-            InlineKeyboardButton("❌ Не знаю", callback_data="cards:dont"),
-        ],
-        [InlineKeyboardButton("Пропустить", callback_data="cards:skip")],
-        [InlineKeyboardButton("Завершить", callback_data="cards:finish")],
+def cards_kb(options: list[str]) -> InlineKeyboardMarkup:
+    """Keyboard for flash-card questions with four options."""
+
+    buttons = [
+        InlineKeyboardButton(opt, callback_data=f"cards:opt:{i}")
+        for i, opt in enumerate(options)
     ]
+    rows = [buttons[:2], buttons[2:4]]
+    rows.append([InlineKeyboardButton("Показать ответ", callback_data="cards:show")])
+    rows.append([InlineKeyboardButton("Пропустить", callback_data="cards:skip")])
+    rows.append([InlineKeyboardButton("Завершить", callback_data="cards:finish")])
     return InlineKeyboardMarkup(rows)
 
 
