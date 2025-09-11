@@ -78,10 +78,10 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle all ``^sprint:`` callbacks."""
 
     q = update.callback_query
-    await q.answer()
 
     parts = q.data.split(":")
     if len(parts) == 3:
+        await q.answer()
         # Session setup: sprint:<continent>:<direction>
         _, continent, direction = parts
         continent_filter: str | None = None if continent == "Весь мир" else continent
@@ -114,6 +114,7 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     action = parts[1]
     session: SprintSession | None = context.user_data.get("sprint_session")
     if not session or not hasattr(session, "current"):
+        await q.answer()
         try:
             await q.edit_message_text("Спринт не найден")
         except (TelegramError, HTTPError) as e:
@@ -126,6 +127,7 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session.questions_asked += 1
         if option == session.current["correct"]:
             session.score += 1
+            await q.answer("✅ Верно")
             logger.debug(
                 "Sprint correct answer by user %s: score=%d questions=%d",
                 session.user_id,
@@ -133,6 +135,10 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 session.questions_asked,
             )
         else:
+            await q.answer(
+                f"❌ Неверно. Правильный ответ: {session.current['correct']}",
+                show_alert=True,
+            )
             logger.debug(
                 "Sprint wrong answer by user %s: score=%d questions=%d",
                 session.user_id,
@@ -143,6 +149,7 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if action == "skip":
+        await q.answer()
         session.questions_asked += 1
         logger.debug(
             "Sprint question skipped by user %s: score=%d questions=%d",
