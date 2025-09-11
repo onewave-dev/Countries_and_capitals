@@ -7,8 +7,11 @@ import random
 import uuid
 from typing import Dict
 
+import logging
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.error import TelegramError
+from httpx import HTTPError
 
 from app import DATA
 from .state import CoopSession
@@ -23,6 +26,8 @@ from .flags import get_country_flag
 
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+
+logger = logging.getLogger(__name__)
 
 
 # ===== Helpers =====
@@ -46,13 +51,17 @@ async def _start_round(
     session.current_question = question
     session.turn = 0
 
-    await context.bot.send_message(
-        chat_id,
-        f"Раунд {session.current_round}/{session.total_rounds}\nИгрок 1: {question['prompt']}",
-        reply_markup=coop_answer_kb(
-            session.session_id, session.players[0], question["options"]
-        ),
-    )
+    try:
+        await context.bot.send_message(
+            chat_id,
+            f"Раунд {session.current_round}/{session.total_rounds}\nИгрок 1: {question['prompt']}",
+            reply_markup=coop_answer_kb(
+                session.session_id, session.players[0], question["options"]
+            ),
+        )
+    except (TelegramError, HTTPError) as e:
+        logger.warning("Failed to start coop round: %s", e)
+        return
 
 
 async def _next_round(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -87,10 +96,14 @@ async def _finish_match(
     else:
         result = "Ничья!"
 
-    await context.bot.send_message(
-        chat_id,
-        f"Матч завершён. Счёт {session.team_score}:{session.bot_score}. {result}",
-    )
+    try:
+        await context.bot.send_message(
+            chat_id,
+            f"Матч завершён. Счёт {session.team_score}:{session.bot_score}. {result}",
+        )
+    except (TelegramError, HTTPError) as e:
+        logger.warning("Failed to send coop match result: %s", e)
+        return
 
 
 # ===== Command handlers =====
@@ -100,9 +113,12 @@ async def cmd_coop_capitals(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Entry point to start a cooperative match in group chats."""
 
     if update.effective_chat.type not in {"group", "supergroup"}:
-        await update.message.reply_text(
-            "Команду /coop_capitals можно использовать только в группе."
-        )
+        try:
+            await update.message.reply_text(
+                "Команду /coop_capitals можно использовать только в группе."
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to notify coop_capitals restriction: %s", e)
         return
 
     session_id = uuid.uuid4().hex
@@ -111,10 +127,14 @@ async def cmd_coop_capitals(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     sessions = _get_sessions(context.chat_data)
     sessions[session_id] = session
 
-    await update.message.reply_text(
-        "Дуэт против Бота: нажмите, чтобы присоединиться.",
-        reply_markup=coop_join_kb(session_id),
-    )
+    try:
+        await update.message.reply_text(
+            "Дуэт против Бота: нажмите, чтобы присоединиться.",
+            reply_markup=coop_join_kb(session_id),
+        )
+    except (TelegramError, HTTPError) as e:
+        logger.warning("Failed to send coop invitation: %s", e)
+        return
 
 
 async def cmd_coop_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -153,7 +173,10 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session_id = parts[2]
         session = sessions.get(session_id)
         if not session:
-            await q.edit_message_text("Матч не найден")
+            try:
+                await q.edit_message_text("Матч не найден")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to notify missing coop match: %s", e)
             return
         user_id = update.effective_user.id
         if user_id in session.players:
@@ -164,15 +187,23 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         session.players.append(user_id)
         if len(session.players) == 2:
-            await q.edit_message_text(
-                "Игроки зарегистрированы. Выберите число раундов:",
-                reply_markup=coop_rounds_kb(session_id),
-            )
+            try:
+                await q.edit_message_text(
+                    "Игроки зарегистрированы. Выберите число раундов:",
+                    reply_markup=coop_rounds_kb(session_id),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send rounds selection: %s", e)
+                return
         else:
-            await q.edit_message_text(
-                "Первый игрок зарегистрирован. Ждём второго…",
-                reply_markup=coop_join_kb(session_id),
-            )
+            try:
+                await q.edit_message_text(
+                    "Первый игрок зарегистрирован. Ждём второго…",
+                    reply_markup=coop_join_kb(session_id),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to update join message: %s", e)
+                return
         return
 
     if action == "rounds":
@@ -180,12 +211,19 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         rounds = int(parts[3])
         session = sessions.get(session_id)
         if not session:
-            await q.edit_message_text("Матч не найден")
+            try:
+                await q.edit_message_text("Матч не найден")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to notify missing coop match: %s", e)
             return
         session.total_rounds = rounds
-        await q.edit_message_text(
-            "Сложность бота:", reply_markup=coop_difficulty_kb(session_id)
-        )
+        try:
+            await q.edit_message_text(
+                "Сложность бота:", reply_markup=coop_difficulty_kb(session_id)
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send difficulty selection: %s", e)
+            return
         return
 
     if action == "diff":
@@ -193,11 +231,18 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         diff = parts[3]
         session = sessions.get(session_id)
         if not session:
-            await q.edit_message_text("Матч не найден")
+            try:
+                await q.edit_message_text("Матч не найден")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to notify missing coop match: %s", e)
             return
         session.difficulty = diff
         session.current_round = 1
-        await q.edit_message_text("Матч начинается!")
+        try:
+            await q.edit_message_text("Матч начинается!")
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send match start message: %s", e)
+            return
         await _start_round(context, session.chat_id, session_id)
         return
 
@@ -207,7 +252,10 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         idx = int(parts[4])
         session = sessions.get(session_id)
         if not session or not hasattr(session, "current_question"):
-            await q.edit_message_text("Матч не найден")
+            try:
+                await q.edit_message_text("Матч не найден")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to notify missing coop match: %s", e)
             return
         if player_id != update.effective_user.id:
             await q.answer("Не ваша очередь", show_alert=True)
@@ -223,21 +271,29 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         if session.turn == 0:
             session.turn = 1
-            await q.edit_message_text(
-                f"Игрок 1: {option} {'✅' if correct else '❌'}\nИгрок 2: {session.current_question['prompt']}",
-                reply_markup=coop_answer_kb(
-                    session.session_id,
-                    session.players[1],
-                    session.current_question["options"],
-                ),
-            )
+            try:
+                await q.edit_message_text(
+                    f"Игрок 1: {option} {'✅' if correct else '❌'}\nИгрок 2: {session.current_question['prompt']}",
+                    reply_markup=coop_answer_kb(
+                        session.session_id,
+                        session.players[1],
+                        session.current_question["options"],
+                    ),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send second player's prompt: %s", e)
+                return
             return
 
         # second player's answer
         session.turn = 2
-        await q.edit_message_text(
-            f"Игрок 2: {option} {'✅' if correct else '❌'}",
-        )
+        try:
+            await q.edit_message_text(
+                f"Игрок 2: {option} {'✅' if correct else '❌'}",
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to show second player's answer: %s", e)
+            return
 
         # Bot move
         accuracy = {"easy": 0.3, "medium": 0.6, "hard": 0.8}.get(
@@ -254,15 +310,19 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             correct_display = session.current_question["correct"]
 
-        await context.bot.send_message(
-            session.chat_id,
-            (
-                f"Бот {'угадал' if bot_correct else 'ошибся'} — правильный ответ: "
-                f"{correct_display}\n"
-                f"Счёт: Команда {session.team_score} — Бот {session.bot_score} "
-                f"(Раунд {session.current_round}/{session.total_rounds})"
-            ),
-        )
+        try:
+            await context.bot.send_message(
+                session.chat_id,
+                (
+                    f"Бот {'угадал' if bot_correct else 'ошибся'} — правильный ответ: "
+                    f"{correct_display}\n"
+                    f"Счёт: Команда {session.team_score} — Бот {session.bot_score} "
+                    f"(Раунд {session.current_round}/{session.total_rounds})"
+                ),
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send bot answer: %s", e)
+            return
 
         # Schedule next round or finish
         context.application.job_queue.run_once(

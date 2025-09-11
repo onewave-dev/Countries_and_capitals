@@ -5,8 +5,9 @@ import random
 from typing import Optional
 
 from telegram import Update
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import ContextTypes
+from httpx import HTTPError
 
 from app import DATA
 from .state import CardSession, add_to_repeat, get_user_stats
@@ -42,13 +43,21 @@ async def _next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     if update.callback_query:
         q = update.callback_query
-        await q.edit_message_text(
-            question["prompt"], reply_markup=cards_kb(question["options"])
-        )
+        try:
+            await q.edit_message_text(
+                question["prompt"], reply_markup=cards_kb(question["options"])
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send card: %s", e)
+            return
     else:
-        await update.effective_message.reply_text(
-            question["prompt"], reply_markup=cards_kb(question["options"])
-        )
+        try:
+            await update.effective_message.reply_text(
+                question["prompt"], reply_markup=cards_kb(question["options"])
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send card: %s", e)
+            return
 
 
 async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -88,9 +97,17 @@ async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if update.callback_query:
         q = update.callback_query
-        await q.edit_message_text(text, reply_markup=reply_markup)
+        try:
+            await q.edit_message_text(text, reply_markup=reply_markup)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send session results: %s", e)
+            return
     else:
-        await update.effective_message.reply_text(text, reply_markup=reply_markup)
+        try:
+            await update.effective_message.reply_text(text, reply_markup=reply_markup)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send session results: %s", e)
+            return
 
 
 async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -125,7 +142,10 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     session: CardSession | None = context.user_data.get("card_session")
     if not session or not hasattr(session, "current"):
-        await q.edit_message_text("Сессия не найдена")
+        try:
+            await q.edit_message_text("Сессия не найдена")
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to notify missing session: %s", e)
         return
 
     current = session.current
@@ -161,7 +181,12 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 reply_markup=cards_kb(current["options"]),
             )
         except BadRequest:
-            logger.debug("Ignoring BadRequest for duplicate edit for user %s", session.user_id)
+            logger.debug(
+                "Ignoring BadRequest for duplicate edit for user %s", session.user_id
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to show answer: %s", e)
+            return
         return
 
     if action == "skip":
