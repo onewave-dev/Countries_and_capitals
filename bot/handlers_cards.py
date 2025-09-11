@@ -27,7 +27,9 @@ async def _next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     item = session.queue.pop(0)
-    question = make_card_question(DATA, item, session.mode)
+    question = make_card_question(
+        DATA, item, session.mode, session.continent_filter
+    )
     session.current = question  # dynamic attribute to store current card
     session.stats["shown"] += 1
 
@@ -40,10 +42,12 @@ async def _next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     if update.callback_query:
         q = update.callback_query
-        await q.edit_message_text(question["prompt"], reply_markup=cards_kb())
+        await q.edit_message_text(
+            question["prompt"], reply_markup=cards_kb(question["options"])
+        )
     else:
         await update.effective_message.reply_text(
-            question["prompt"], reply_markup=cards_kb()
+            question["prompt"], reply_markup=cards_kb(question["options"])
         )
 
 
@@ -96,7 +100,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await q.answer()
 
     parts = q.data.split(":")
-    if len(parts) == 3:
+    if len(parts) == 3 and parts[1] != "opt":
         # Session setup: cards:<continent>:<direction>
         _, continent, direction = parts
         continent_filter: Optional[str] = None if continent == "Весь мир" else continent
@@ -119,14 +123,31 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _next_card(update, context)
         return
 
-    # Ongoing session actions
-    action = parts[1]
     session: CardSession | None = context.user_data.get("card_session")
     if not session or not hasattr(session, "current"):
         await q.edit_message_text("Сессия не найдена")
         return
 
     current = session.current
+
+    if len(parts) == 3 and parts[1] == "opt":
+        index = int(parts[2])
+        item = (
+            current["country"]
+            if current["type"] == "country_to_capital"
+            else current["capital"]
+        )
+        selected = current["options"][index]
+        if selected == current["answer"]:
+            get_user_stats(context.user_data).to_repeat.discard(item)
+            session.stats["known"] += 1
+        else:
+            session.unknown_set.add(item)
+            add_to_repeat(context.user_data, {item})
+        await _next_card(update, context)
+        return
+
+    action = parts[1]
     if action == "show":
         target_text_plain = f"{current['prompt']}\n\n{current['answer']}"
         if q.message.text == target_text_plain:
@@ -137,31 +158,10 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await q.edit_message_text(
                 f"{current['prompt']}\n\n<b>{current['answer']}</b>",
                 parse_mode="HTML",
-                reply_markup=cards_kb(),
+                reply_markup=cards_kb(current["options"]),
             )
         except BadRequest:
             logger.debug("Ignoring BadRequest for duplicate edit for user %s", session.user_id)
-        return
-    if action == "know":
-        item = (
-            current["country"]
-            if current["type"] == "country_to_capital"
-            else current["capital"]
-        )
-        get_user_stats(context.user_data).to_repeat.discard(item)
-        session.stats["known"] += 1
-        await _next_card(update, context)
-        return
-
-    if action == "dont":
-        item = (
-            current["country"]
-            if current["type"] == "country_to_capital"
-            else current["capital"]
-        )
-        session.unknown_set.add(item)
-        add_to_repeat(context.user_data, {item})
-        await _next_card(update, context)
         return
 
     if action == "skip":
