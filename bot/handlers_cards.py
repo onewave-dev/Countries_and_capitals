@@ -11,6 +11,7 @@ from app import DATA
 from .state import CardSession, add_to_repeat, get_user_stats
 from .questions import make_card_question
 from .keyboards import cards_kb, cards_repeat_kb
+from .flags import get_country_flag
 
 
 logger = logging.getLogger(__name__)
@@ -68,9 +69,12 @@ async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         unknown_lines = []
         for item in sorted(session.unknown_set):
             if item in DATA.capital_by_country:
-                pair = f"{item} — {DATA.capital_by_country[item]}"
+                flag = get_country_flag(item)
+                pair = f"{flag} {item} — {DATA.capital_by_country[item]}".strip()
             else:
-                pair = f"{item} — {DATA.country_by_capital[item]}"
+                country = DATA.country_by_capital[item]
+                flag = get_country_flag(country)
+                pair = f"{item} — {flag} {country}".strip()
             unknown_lines.append(pair)
         text += "\nНеизвестные:\n" + "\n".join(unknown_lines)
         reply_markup = cards_repeat_kb()

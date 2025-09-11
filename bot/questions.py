@@ -1,6 +1,7 @@
 import random
 
 from .state import DataSource
+from .flags import get_country_flag
 
 
 def pick_question(data: DataSource, continent: str | None, mode: str):
@@ -29,9 +30,12 @@ def pick_question(data: DataSource, continent: str | None, mode: str):
     random.shuffle(options)
 
     if question_type == "country_to_capital":
-        prompt = f"Какая столица у {country}?"
+        flag = get_country_flag(country)
+        prompt = f"Какая столица у {flag} {country}?".strip()
     else:
         prompt = f"К какой стране относится {capital}?"
+        correct = f"{get_country_flag(correct)} {correct}".strip()
+        options = [f"{get_country_flag(o)} {o}".strip() for o in options]
 
     return {
         "type": question_type,
@@ -61,13 +65,14 @@ def make_card_question(data: DataSource, item: str, mode: str):
     if question_type == "country_to_capital":
         country = item
         capital = data.capital_by_country[country]
-        prompt = f"Какая столица у {country}?"
+        flag = get_country_flag(country)
+        prompt = f"Какая столица у {flag} {country}?".strip()
         answer = capital
     else:
         capital = item
         country = data.country_by_capital[capital]
         prompt = f"К какой стране относится {capital}?"
-        answer = country
+        answer = f"{get_country_flag(country)} {country}".strip()
 
     return {
         "type": question_type,
