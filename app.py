@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -133,11 +134,20 @@ async def telegram_webhook(request: Request):
         raise HTTPException(503, "service unavailable")
 
     data = await request.json()
-    update = Update.de_json(data, application.bot)
 
-    if not application.running:
-        raise HTTPException(503, "service unavailable")
-    await application.process_update(update)
+    try:
+        update = Update.de_json(data, application.bot)
+
+        if not application.running:
+            raise HTTPException(503, "service unavailable")
+        await application.process_update(update)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("update processing failed")
+        status_code = getattr(exc, "status_code", 500)
+        response = JSONResponse({"ok": False})
+        response.headers["X-Telegram-Status"] = str(status_code)
+        return response
+
     return {"ok": True}
 
 # ===== Lifespan =====
