@@ -3,7 +3,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from .keyboards import main_menu_kb, continent_kb, direction_kb
+from .keyboards import main_menu_kb, continent_kb, direction_kb, sprint_duration_kb
 
 WELCOME = (
     "Привет! Это бот для тренировки знаний столицы ↔ страна.\n"
@@ -26,14 +26,22 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "📘 Флэш-карточки: выбери континент." if mode == "cards" else "⏱ Игра на время: выбери континент."
         await q.edit_message_text(text, reply_markup=continent_kb(f"menu:{mode}"))
 
-    elif data.startswith("menu:cards:") or data.startswith("menu:sprint:"):
+    elif data.startswith("menu:cards:"):
         parts = data.split(":", 2)
-        mode = parts[1]
         continent = parts[2]
         context.user_data["continent"] = continent
         await q.edit_message_text(
             "Выбери направление вопросов:",
-            reply_markup=direction_kb(mode, continent),
+            reply_markup=direction_kb("cards", continent),
+        )
+
+    elif data.startswith("menu:sprint:"):
+        parts = data.split(":", 2)
+        continent = parts[2]
+        context.user_data["continent"] = continent
+        await q.edit_message_text(
+            "Выбери длительность спринта:",
+            reply_markup=sprint_duration_kb(continent),
         )
 
     elif data == "menu:coop":

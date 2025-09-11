@@ -80,17 +80,19 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
 
     parts = q.data.split(":")
-    if len(parts) == 3:
+    action = parts[1]
+    if action not in {"opt", "skip"}:
         await q.answer()
-        # Session setup: sprint:<continent>:<direction>
-        _, continent, direction = parts
+        # Session setup: sprint:<continent>:<duration>
+        continent = action
+        duration = int(parts[2]) if len(parts) > 2 else 60
         continent_filter: str | None = None if continent == "Весь мир" else continent
         session = SprintSession(
             user_id=update.effective_user.id,
-            duration_sec=60,
+            duration_sec=duration,
         )
         session.continent_filter = continent_filter
-        session.mode = direction
+        session.mode = "mixed"
         context.user_data["sprint_session"] = session
 
         job = context.application.job_queue.run_once(
@@ -111,7 +113,6 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     # Ongoing session actions
-    action = parts[1]
     session: SprintSession | None = context.user_data.get("sprint_session")
     if not session or not hasattr(session, "current"):
         await q.answer()
