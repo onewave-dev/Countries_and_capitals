@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from app import DATA
-from .state import SprintSession
+from .state import SprintSession, record_sprint_result
 from .questions import pick_question
 from .keyboards import sprint_kb
 
@@ -55,8 +55,7 @@ async def _sprint_timeout(context: ContextTypes.DEFAULT_TYPE) -> None:
         f"⏱ Время вышло! Ваш результат: {session.score} правильных из {session.questions_asked}",
     )
 
-    results = user_data.setdefault("sprint_results", [])
-    results.append({"score": session.score, "total": session.questions_asked})
+    record_sprint_result(user_data, session.score, session.questions_asked)
 
     user_data.pop("sprint_session", None)
 
