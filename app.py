@@ -1,4 +1,5 @@
 import os
+import logging
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -15,6 +16,10 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "")         # https://<your-service>.onrender.com
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "secret")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+logging.basicConfig(level=LOG_LEVEL)
+logger = logging.getLogger(__name__)
 
 if not BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
@@ -61,6 +66,30 @@ application.add_handler(CallbackQueryHandler(cb_cards, pattern="^cards:"))
 application.add_handler(CallbackQueryHandler(cb_sprint, pattern="^sprint:"))
 application.add_handler(CallbackQueryHandler(cb_coop, pattern="^coop:"))
 
+
+async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Periodically verify webhook status and log anomalies."""
+    if not PUBLIC_URL:
+        return
+
+    expected_url = f"{PUBLIC_URL}{WEBHOOK_PATH}?secret_token={WEBHOOK_SECRET}"
+    info = await context.bot.get_webhook_info()
+
+    if info.url != expected_url:
+        logger.warning(
+            "Webhook URL mismatch: expected %s, got %s", expected_url, info.url
+        )
+    if info.pending_update_count:
+        logger.warning(
+            "Webhook has %d pending updates", info.pending_update_count
+        )
+    if info.last_error_message:
+        logger.error(
+            "Webhook error: %s (since %s)",
+            info.last_error_message,
+            info.last_error_date,
+        )
+
 # ===== FastAPI models =====
 class TelegramUpdate(BaseModel):
     update_id: int | None = None
@@ -97,9 +126,27 @@ async def telegram_webhook(request: Request):
 # ===== Lifespan =====
 @app.on_event("startup")
 async def on_startup():
-    # Nothing special here; webhook is set by /set_webhook
     await application.initialize()
     await application.start()
+
+    if PUBLIC_URL:
+        expected_url = f"{PUBLIC_URL}{WEBHOOK_PATH}?secret_token={WEBHOOK_SECRET}"
+        info = await application.bot.get_webhook_info()
+        if info.url != expected_url:
+            logger.info(
+                "Re-registering webhook: expected %s, got %s",
+                expected_url,
+                info.url,
+            )
+            await application.bot.set_webhook(
+                url=expected_url, allowed_updates=[]
+            )
+    else:
+        logger.warning("PUBLIC_URL is not set; webhook check skipped")
+
+    application.job_queue.run_repeating(
+        check_webhook, interval=600, first=600
+    )
 
 @app.on_event("shutdown")
 async def on_shutdown():
