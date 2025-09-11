@@ -119,7 +119,7 @@ def cards_repeat_kb() -> InlineKeyboardMarkup:
     """Keyboard shown after session to repeat unknown cards."""
     rows = [
         [InlineKeyboardButton("Повторить", callback_data="cards:repeat")],
-        [InlineKeyboardButton("Завершить", callback_data="cards:finish")],
+        [InlineKeyboardButton("В меню", callback_data="cards:menu")],
     ]
     return InlineKeyboardMarkup(rows)
 
