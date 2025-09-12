@@ -128,6 +128,9 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
 
     parts = q.data.split(":")
+    if parts == ["cards", "void"]:
+        await q.answer()
+        return
     if parts == ["cards", "menu"]:
         await q.answer()
         context.user_data.pop("card_session", None)
