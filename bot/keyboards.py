@@ -146,6 +146,12 @@ def cards_repeat_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def cards_finish_kb() -> InlineKeyboardMarkup:
+    """Keyboard shown after session with no unknown cards."""
+    rows = [[InlineKeyboardButton("В меню", callback_data="cards:menu")]]
+    return InlineKeyboardMarkup(rows)
+
+
 def sprint_kb(options: list[str], allow_skip: bool = True) -> InlineKeyboardMarkup:
     """Keyboard for sprint questions with four options and optional skip."""
     wrapped = [wrap_button_text(opt) for opt in options]
