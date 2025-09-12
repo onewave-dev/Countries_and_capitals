@@ -12,7 +12,13 @@ from httpx import HTTPError
 from app import DATA
 from .state import CardSession, add_to_repeat, get_user_stats
 from .questions import make_card_question
-from .keyboards import cards_kb, cards_repeat_kb, main_menu_kb, cards_answer_kb
+from .keyboards import (
+    cards_kb,
+    cards_repeat_kb,
+    cards_finish_kb,
+    main_menu_kb,
+    cards_answer_kb,
+)
 from .flags import get_country_flag
 from .handlers_menu import WELCOME
 
@@ -83,7 +89,7 @@ async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"Сессия завершена. Показано: {session.stats['shown']}, "
         f"знаю: {session.stats['known']}."
     )
-    reply_markup = None
+    reply_markup = cards_finish_kb()
     if session.unknown_set:
         unknown_lines = []
         for item in sorted(session.unknown_set):
@@ -122,6 +128,14 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
 
     parts = q.data.split(":")
+    if parts == ["cards", "menu"]:
+        await q.answer()
+        context.user_data.pop("card_session", None)
+        try:
+            await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to return to menu: %s", e)
+        return
     if len(parts) == 3 and parts[1] != "opt":
         await q.answer()
         # Session setup: cards:<continent>:<direction>
@@ -232,15 +246,6 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session.unknown_set.clear()
         session.stats = {"shown": 0, "known": 0}
         await _next_card(update, context)
-        return
-
-    if action == "menu":
-        await q.answer()
-        context.user_data.pop("card_session", None)
-        try:
-            await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to return to menu: %s", e)
         return
 
     await q.answer()
