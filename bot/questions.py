@@ -33,7 +33,7 @@ def pick_question(data: DataSource, continent: str | None, mode: str):
         flag = get_country_flag(country)
         prompt = f"Какая столица у {flag} {country}?".strip()
     else:
-        prompt = f"К какой стране относится {capital}?"
+        prompt = f"Столицей какой страны является <b>{capital}</b>?"
         correct = f"{get_country_flag(correct)} {correct}".strip()
         options = [f"{get_country_flag(o)} {o}".strip() for o in options]
 
@@ -78,7 +78,7 @@ def make_card_question(
     else:
         capital = item
         country = data.country_by_capital[capital]
-        prompt = f"К какой стране относится {capital}?"
+        prompt = f"Столицей какой страны является <b>{capital}</b>?"
         answer = f"{get_country_flag(country)} {country}".strip()
         pool = [c for c in data.countries(continent) if c != country]
         distractors = random.sample(pool, k=min(3, len(pool)))
