@@ -83,6 +83,9 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     parts = q.data.split(":")
     action = parts[1]
+    if action == "void":
+        await q.answer()
+        return
     if action not in {"opt", "skip"}:
         await q.answer()
         # Session setup: sprint:<continent>:<duration>
