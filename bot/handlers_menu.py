@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 
 from app import DATA
 from .state import CardSession
-from .keyboards import main_menu_kb, continent_kb, sprint_duration_kb
+from .keyboards import main_menu_kb, continent_kb, sprint_start_kb
 
 WELCOME = (
     "Привет! Это бот для тренировки знаний столицы ↔ страна.\n"
@@ -53,8 +53,8 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         continent = parts[2]
         context.user_data["continent"] = continent
         await q.edit_message_text(
-            "Выбери длительность спринта:",
-            reply_markup=sprint_duration_kb(continent),
+            "У тебя будет 60 секунд, чтобы ответить как можно больше вопросов правильно.",
+            reply_markup=sprint_start_kb(continent),
         )
 
     elif data == "menu:coop":

@@ -105,6 +105,7 @@ class SprintSession:
     start_ts: float | None = None
     score: int = 0
     questions_asked: int = 0
+    wrong_answers: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
