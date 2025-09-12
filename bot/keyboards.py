@@ -1,38 +1,10 @@
 """Inline keyboards used across the bot menus."""
 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-import unicodedata
+from textwrap import shorten
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-
-def wrap_button_text(text: str, limit: int = 20) -> str:
-    """Insert line breaks so that each line is at most *limit* chars.
-
-    If the text starts with an emoji (such as a country flag), the emoji and
-    the first word are kept together before applying wrapping. This prevents
-    splits like "🇨🇫\nЦентральноафриканская".
-    """
-    words = text.split()
-    if not words:
-        return text
-
-    def _is_emoji(token: str) -> bool:
-        return all(unicodedata.category(ch) == "So" for ch in token)
-
-    if len(words) > 1 and _is_emoji(words[0]):
-        words[0] = f"{words[0]} {words[1]}"
-        del words[1]
-
-    lines: list[str] = []
-    current = words[0]
-    for word in words[1:]:
-        candidate = f"{current} {word}"
-        if len(candidate) <= limit:
-            current = candidate
-        else:
-            lines.append(current)
-            current = word
-    lines.append(current)
-    return "\n".join(lines)
+# Text longer than this will be placed on its own row instead of pairing.
+LONG_OPTION = 15
 
 
 def main_menu_kb() -> InlineKeyboardMarkup:
@@ -110,18 +82,25 @@ def sprint_duration_kb(continent: str) -> InlineKeyboardMarkup:
 
 def cards_kb(options: list[str]) -> InlineKeyboardMarkup:
     """Keyboard for flash-card questions with answer options."""
-    wrapped = [wrap_button_text(opt) for opt in options]
-    max_len = max(len(line) for opt in wrapped for line in opt.split("\n"))
-    buttons = [
-        InlineKeyboardButton(opt, callback_data=f"cards:opt:{i}")
-        for i, opt in enumerate(wrapped)
-    ]
-    if max_len > 20:
-        rows = [[btn] for btn in buttons]
-    else:
-        rows = [buttons[:2]]
-        if len(buttons) > 2:
-            rows.append(buttons[2:4])
+
+    rows: list[list[InlineKeyboardButton]] = []
+    buffer: list[InlineKeyboardButton] = []
+    for i, opt in enumerate(options):
+        text = shorten(opt, width=40, placeholder="")
+        btn = InlineKeyboardButton(text, callback_data=f"cards:opt:{i}")
+        if len(text) > LONG_OPTION:
+            if buffer:
+                rows.append(buffer)
+                buffer = []
+            rows.append([btn])
+        else:
+            buffer.append(btn)
+            if len(buffer) == 2:
+                rows.append(buffer)
+                buffer = []
+    if buffer:
+        rows.append(buffer)
+
     rows.append([InlineKeyboardButton("Показать ответ", callback_data="cards:show")])
     rows.append([InlineKeyboardButton("Пропустить", callback_data="cards:skip")])
     rows.append([InlineKeyboardButton("Завершить", callback_data="cards:finish")])
@@ -154,16 +133,24 @@ def cards_finish_kb() -> InlineKeyboardMarkup:
 
 def sprint_kb(options: list[str], allow_skip: bool = True) -> InlineKeyboardMarkup:
     """Keyboard for sprint questions with four options and optional skip."""
-    wrapped = [wrap_button_text(opt) for opt in options]
-    max_len = max(len(line) for opt in wrapped for line in opt.split("\n"))
-    buttons = [
-        InlineKeyboardButton(opt, callback_data=f"sprint:opt:{i}")
-        for i, opt in enumerate(wrapped)
-    ]
-    if max_len > 20:
-        rows = [[btn] for btn in buttons]
-    else:
-        rows = [buttons[:2], buttons[2:4]]
+
+    rows: list[list[InlineKeyboardButton]] = []
+    buffer: list[InlineKeyboardButton] = []
+    for i, opt in enumerate(options):
+        text = shorten(opt, width=40, placeholder="")
+        btn = InlineKeyboardButton(text, callback_data=f"sprint:opt:{i}")
+        if len(text) > LONG_OPTION:
+            if buffer:
+                rows.append(buffer)
+                buffer = []
+            rows.append([btn])
+        else:
+            buffer.append(btn)
+            if len(buffer) == 2:
+                rows.append(buffer)
+                buffer = []
+    if buffer:
+        rows.append(buffer)
     if allow_skip:
         rows.append([InlineKeyboardButton("Пропустить", callback_data="sprint:skip")])
     return InlineKeyboardMarkup(rows)
@@ -204,15 +191,24 @@ def coop_difficulty_kb(session_id: str) -> InlineKeyboardMarkup:
 def coop_answer_kb(session_id: str, player_id: int, options: list[str]) -> InlineKeyboardMarkup:
     """Keyboard with four answer options bound to a player."""
 
-    wrapped = [wrap_button_text(opt) for opt in options]
-    max_len = max(len(line) for opt in wrapped for line in opt.split("\n"))
-    buttons = [
-        InlineKeyboardButton(opt, callback_data=f"coop:ans:{session_id}:{player_id}:{i}")
-        for i, opt in enumerate(wrapped)
-    ]
-    if max_len > 20:
-        rows = [[btn] for btn in buttons]
-    else:
-        rows = [buttons[:2], buttons[2:4]]
+    rows: list[list[InlineKeyboardButton]] = []
+    buffer: list[InlineKeyboardButton] = []
+    for i, opt in enumerate(options):
+        text = shorten(opt, width=40, placeholder="")
+        btn = InlineKeyboardButton(
+            text, callback_data=f"coop:ans:{session_id}:{player_id}:{i}"
+        )
+        if len(text) > LONG_OPTION:
+            if buffer:
+                rows.append(buffer)
+                buffer = []
+            rows.append([btn])
+        else:
+            buffer.append(btn)
+            if len(buffer) == 2:
+                rows.append(buffer)
+                buffer = []
+    if buffer:
+        rows.append(buffer)
     return InlineKeyboardMarkup(rows)
 
