@@ -103,6 +103,7 @@ def cards_kb(options: list[str]) -> InlineKeyboardMarkup:
     if buffer:
         rows.append(buffer)
     # spacer row to visually separate options from action buttons
+
     rows.append([InlineKeyboardButton(SPACER, callback_data="cards:void")])
     rows.append([InlineKeyboardButton("Показать ответ", callback_data="cards:show")])
     rows.append([InlineKeyboardButton("Пропустить", callback_data="cards:skip")])
