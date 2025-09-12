@@ -11,7 +11,9 @@ from httpx import HTTPError
 from app import DATA
 from .state import SprintSession, record_sprint_result
 from .questions import pick_question
-from .keyboards import sprint_kb
+from .flags import get_country_flag
+from .keyboards import sprint_kb, sprint_result_kb
+from .handlers_menu import WELCOME, main_menu_kb
 
 
 logger = logging.getLogger(__name__)
@@ -65,15 +67,21 @@ async def _sprint_timeout(context: ContextTypes.DEFAULT_TYPE) -> None:
     result_text = (
         f"⏱ Время вышло! Ваш результат: {session.score} правильных из {session.questions_asked}"
     )
-    result_text += "\n\nЧто было не правильно:"
+    result_text += "\n\nЧто было неправильно или пропущено:"
     if session.wrong_answers:
-        wrong_lines = [f"{c} — {k}" for c, k in session.wrong_answers]
+        wrong_lines = [
+            f"{get_country_flag(c)} {c} — Столица: {k}"
+            for c, k in session.wrong_answers
+        ]
         result_text += "\n" + "\n".join(wrong_lines)
+
+    continent = session.continent_filter or "Весь мир"
 
     try:
         await context.bot.send_message(
             user_id,
             result_text,
+            reply_markup=sprint_result_kb(continent),
         )
     except (TelegramError, HTTPError) as e:
         logger.warning("Failed to send sprint timeout message: %s", e)
@@ -93,6 +101,14 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     action = parts[1]
     if action == "void":
         await q.answer()
+        return
+    if parts == ["sprint", "menu"]:
+        await q.answer()
+        context.user_data.pop("sprint_session", None)
+        try:
+            await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to return to menu: %s", e)
         return
     if action not in {"opt", "skip"}:
         await q.answer()
@@ -168,6 +184,9 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if action == "skip":
         await q.answer()
         session.questions_asked += 1
+        session.wrong_answers.append(
+            (session.current["country"], session.current["capital"])
+        )
         logger.debug(
             "Sprint question skipped by user %s: score=%d questions=%d",
             session.user_id,
