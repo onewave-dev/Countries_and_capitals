@@ -12,7 +12,7 @@ from httpx import HTTPError
 from app import DATA
 from .state import CardSession, add_to_repeat, get_user_stats
 from .questions import make_card_question
-from .keyboards import cards_kb, cards_repeat_kb, main_menu_kb
+from .keyboards import cards_kb, cards_repeat_kb, main_menu_kb, cards_answer_kb
 from .flags import get_country_flag
 from .handlers_menu import WELCOME
 
@@ -190,7 +190,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await q.edit_message_text(
                 f"{current['prompt']}\n\n<b>{current['answer']}</b>",
                 parse_mode="HTML",
-                reply_markup=cards_kb(current["options"]),
+                reply_markup=cards_answer_kb(),
             )
         except BadRequest:
             logger.debug(
@@ -199,6 +199,11 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to show answer: %s", e)
             return
+        return
+
+    if action == "next":
+        await q.answer()
+        await _next_card(update, context)
         return
 
     if action == "skip":
