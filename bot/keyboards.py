@@ -157,6 +157,20 @@ def sprint_kb(options: list[str], allow_skip: bool = True) -> InlineKeyboardMark
     return InlineKeyboardMarkup(rows)
 
 
+def sprint_result_kb(continent: str) -> InlineKeyboardMarkup:
+    """Keyboard shown after sprint results.
+
+    Provides a quick restart for the same continent and a button to return to
+    the main menu.
+    """
+
+    rows = [
+        [InlineKeyboardButton("Играть еще раз", callback_data=f"sprint:{continent}")],
+        [InlineKeyboardButton("В меню", callback_data="sprint:menu")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 # ===== Cooperative mode keyboards =====
 
 
