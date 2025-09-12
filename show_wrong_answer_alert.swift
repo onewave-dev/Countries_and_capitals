@@ -1,7 +1,7 @@
 func showWrongAnswerAlert() {
     let alert = UIAlertController(
         title: "❌ Неверно.",
-        message: "Правильный ответ:\n🇲🇿 Мозамбик",
+        message: "Правильный ответ:\n🇳🇬 Нигерия",
         preferredStyle: .alert
     )
 
