@@ -277,7 +277,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await q.answer("✅ Верно", show_alert=True)
         else:
             await q.answer(
-                f"❌ Неверно. Правильный ответ: {session.current_question['correct']}",
+                f"❌ Неверно.\nПравильный ответ:\n{session.current_question['correct']}",
                 show_alert=True,
             )
 

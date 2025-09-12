@@ -170,7 +170,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session.unknown_set.add(item)
             add_to_repeat(context.user_data, {item})
             await q.answer(
-                f"❌ Неверно. Правильный ответ: {current['answer']}",
+                f"❌ Неверно.\nПравильный ответ:\n{current['answer']}",
                 show_alert=True,
             )
         await _next_card(update, context)

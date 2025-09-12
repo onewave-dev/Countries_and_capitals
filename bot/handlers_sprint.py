@@ -137,7 +137,7 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         else:
             await q.answer(
-                f"❌ Неверно. Правильный ответ: {session.current['correct']}",
+                f"❌ Неверно.\nПравильный ответ:\n{session.current['correct']}",
                 show_alert=True,
             )
             logger.debug(
