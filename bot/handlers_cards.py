@@ -201,13 +201,13 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session.unknown_set.add(item)
         add_to_repeat(context.user_data, {item})
         prompt_plain = current["prompt"].replace("<b>", "").replace("</b>", "")
-        target_text_plain = f"{prompt_plain}\n\n{current['answer']}"
+        target_text_plain = f"{prompt_plain}\n\nОтвет: {current['answer']}"
         if q.message.text == target_text_plain:
             logger.debug("Skipping edit for user %s: answer already shown", session.user_id)
             return
         try:
             await q.edit_message_text(
-                f"{current['prompt']}\n\n<b>{current['answer']}</b>",
+                f"{current['prompt']}\n\n<b>Ответ: {current['answer']}</b>",
                 parse_mode="HTML",
                 reply_markup=cards_answer_kb(),
             )
