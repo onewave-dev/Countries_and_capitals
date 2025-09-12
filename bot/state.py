@@ -13,6 +13,7 @@ class DataSource:
     countries_by_continent: Dict[str, Set[str]]
     capital_by_country: Dict[str, str]
     country_by_capital: Dict[str, str]
+    country_to_continent: Dict[str, str]
     aliases: Dict[str, str]
 
     @classmethod
@@ -27,6 +28,11 @@ class DataSource:
             continent: set(countries)
             for continent, countries in raw.get("countries_by_continent", {}).items()
         }
+        country_to_continent = {
+            country: continent
+            for continent, countries in countries_by_continent.items()
+            for country in countries
+        }
         capital_by_country = raw.get("capital_by_country", {})
         country_by_capital = {cap: country for country, cap in capital_by_country.items()}
         aliases = {k.casefold(): v for k, v in raw.get("aliases", {}).items()}
@@ -38,6 +44,7 @@ class DataSource:
             countries_by_continent=countries_by_continent,
             capital_by_country=capital_by_country,
             country_by_capital=country_by_capital,
+            country_to_continent=country_to_continent,
             aliases=aliases,
         )
 
@@ -61,6 +68,15 @@ class DataSource:
         else:
             pool = self.capital_by_country.values()
         return sorted(pool)
+
+    def continent_of_country(self, country: str) -> str | None:
+        return self.country_to_continent.get(country)
+
+    def continent_of_capital(self, capital: str) -> str | None:
+        country = self.country_by_capital.get(capital)
+        if country:
+            return self.country_to_continent.get(country)
+        return None
 
     def items(self, continent: str | None, mode: str) -> List[str]:
         """Return a list of countries or capitals based on mode."""
