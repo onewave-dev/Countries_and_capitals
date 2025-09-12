@@ -1,13 +1,26 @@
 """Inline keyboards used across the bot menus."""
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+import unicodedata
 
 
 def wrap_button_text(text: str, limit: int = 20) -> str:
-    """Insert line breaks so that each line is at most *limit* chars."""
+    """Insert line breaks so that each line is at most *limit* chars.
+
+    If the text starts with an emoji (such as a country flag), the emoji and
+    the first word are kept together before applying wrapping. This prevents
+    splits like "🇨🇫\nЦентральноафриканская".
+    """
     words = text.split()
     if not words:
         return text
+
+    def _is_emoji(token: str) -> bool:
+        return all(unicodedata.category(ch) == "So" for ch in token)
+
+    if len(words) > 1 and _is_emoji(words[0]):
+        words[0] = f"{words[0]} {words[1]}"
+        del words[1]
 
     lines: list[str] = []
     current = words[0]
