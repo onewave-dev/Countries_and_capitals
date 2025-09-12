@@ -58,6 +58,7 @@ async def _start_round(
             reply_markup=coop_answer_kb(
                 session.session_id, session.players[0], question["options"]
             ),
+            parse_mode="HTML",
         )
     except (TelegramError, HTTPError) as e:
         logger.warning("Failed to start coop round: %s", e)
@@ -291,6 +292,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         session.players[1],
                         session.current_question["options"],
                     ),
+                    parse_mode="HTML",
                 )
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send second player's prompt: %s", e)

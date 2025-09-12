@@ -46,7 +46,9 @@ async def _next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         q = update.callback_query
         try:
             await q.edit_message_text(
-                question["prompt"], reply_markup=cards_kb(question["options"])
+                question["prompt"],
+                reply_markup=cards_kb(question["options"]),
+                parse_mode="HTML",
             )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send card: %s", e)
@@ -54,7 +56,9 @@ async def _next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     else:
         try:
             await update.effective_message.reply_text(
-                question["prompt"], reply_markup=cards_kb(question["options"])
+                question["prompt"],
+                reply_markup=cards_kb(question["options"]),
+                parse_mode="HTML",
             )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send card: %s", e)
@@ -182,7 +186,8 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         item = current["country"] if current["type"] == "country_to_capital" else current["capital"]
         session.unknown_set.add(item)
         add_to_repeat(context.user_data, {item})
-        target_text_plain = f"{current['prompt']}\n\n{current['answer']}"
+        prompt_plain = current["prompt"].replace("<b>", "").replace("</b>", "")
+        target_text_plain = f"{prompt_plain}\n\n{current['answer']}"
         if q.message.text == target_text_plain:
             logger.debug("Skipping edit for user %s: answer already shown", session.user_id)
             return

@@ -30,14 +30,16 @@ async def _ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if update.callback_query:
         q = update.callback_query
         try:
-            await q.edit_message_text(question["prompt"], reply_markup=reply_markup)
+            await q.edit_message_text(
+                question["prompt"], reply_markup=reply_markup, parse_mode="HTML"
+            )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send sprint question: %s", e)
             return
     else:
         try:
             await update.effective_message.reply_text(
-                question["prompt"], reply_markup=reply_markup
+                question["prompt"], reply_markup=reply_markup, parse_mode="HTML"
             )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send sprint question: %s", e)
