@@ -1,9 +1,13 @@
 """Handlers for the main menu flow."""
 
+import random
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from .keyboards import main_menu_kb, continent_kb, direction_kb, sprint_duration_kb
+from app import DATA
+from .state import CardSession
+from .keyboards import main_menu_kb, continent_kb, sprint_duration_kb
 
 WELCOME = (
     "Привет! Это бот для тренировки знаний столицы ↔ страна.\n"
@@ -30,10 +34,19 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split(":", 2)
         continent = parts[2]
         context.user_data["continent"] = continent
-        await q.edit_message_text(
-            "Выбери направление вопросов:",
-            reply_markup=direction_kb("cards", continent),
+        continent_filter = None if continent == "Весь мир" else continent
+        queue = DATA.items(continent_filter, "mixed")
+        random.shuffle(queue)
+        session = CardSession(
+            user_id=update.effective_user.id,
+            continent_filter=continent_filter,
+            mode="mixed",
+            queue=queue,
         )
+        context.user_data["card_session"] = session
+        from .handlers_cards import _next_card  # local import to avoid circular
+
+        await _next_card(update, context)
 
     elif data.startswith("menu:sprint:"):
         parts = data.split(":", 2)
