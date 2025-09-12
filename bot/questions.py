@@ -13,6 +13,7 @@ def pick_question(data: DataSource, continent: str | None, mode: str):
 
     country = random.choice(countries)
     capital = data.capital_by_country[country]
+    actual_continent = data.continent_of_country(country) or continent
 
     question_type = mode
     if mode == "mixed":
@@ -20,10 +21,10 @@ def pick_question(data: DataSource, continent: str | None, mode: str):
 
     if question_type == "country_to_capital":
         correct = capital
-        pool = [c for c in data.capitals(continent) if c != capital]
+        pool = [c for c in data.capitals(actual_continent) if c != capital]
     else:
         correct = country
-        pool = [c for c in countries if c != country]
+        pool = [c for c in data.countries(actual_continent) if c != country]
 
     distractors = random.sample(pool, k=min(3, len(pool)))
     options = distractors + [correct]
@@ -71,7 +72,8 @@ def make_card_question(
         flag = get_country_flag(country)
         prompt = f"Какая столица у {flag} {country}?".strip()
         answer = capital
-        pool = [c for c in data.capitals(continent) if c != capital]
+        cont = data.continent_of_country(country) or continent
+        pool = [c for c in data.capitals(cont) if c != capital]
         distractors = random.sample(pool, k=min(3, len(pool)))
         options = distractors + [capital]
         random.shuffle(options)
@@ -80,7 +82,8 @@ def make_card_question(
         country = data.country_by_capital[capital]
         prompt = f"Столицей какой страны является <b>{capital}</b>?"
         answer = f"{get_country_flag(country)} {country}".strip()
-        pool = [c for c in data.countries(continent) if c != country]
+        cont = data.continent_of_country(country) or continent
+        pool = [c for c in data.countries(cont) if c != country]
         distractors = random.sample(pool, k=min(3, len(pool)))
         options_raw = distractors + [country]
         options = [f"{get_country_flag(o)} {o}".strip() for o in options_raw]
