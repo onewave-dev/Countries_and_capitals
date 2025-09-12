@@ -62,10 +62,18 @@ async def _sprint_timeout(context: ContextTypes.DEFAULT_TYPE) -> None:
         session.questions_asked,
     )
 
+    result_text = (
+        f"⏱ Время вышло! Ваш результат: {session.score} правильных из {session.questions_asked}"
+    )
+    result_text += "\n\nЧто было не правильно:"
+    if session.wrong_answers:
+        wrong_lines = [f"{c} — {k}" for c, k in session.wrong_answers]
+        result_text += "\n" + "\n".join(wrong_lines)
+
     try:
         await context.bot.send_message(
             user_id,
-            f"⏱ Время вышло! Ваш результат: {session.score} правильных из {session.questions_asked}",
+            result_text,
         )
     except (TelegramError, HTTPError) as e:
         logger.warning("Failed to send sprint timeout message: %s", e)
@@ -88,9 +96,9 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if action not in {"opt", "skip"}:
         await q.answer()
-        # Session setup: sprint:<continent>:<duration>
+        # Session setup: sprint:<continent>
         continent = action
-        duration = int(parts[2]) if len(parts) > 2 else 60
+        duration = 60
         continent_filter: str | None = None if continent == "Весь мир" else continent
         session = SprintSession(
             user_id=update.effective_user.id,
@@ -141,6 +149,9 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 session.questions_asked,
             )
         else:
+            session.wrong_answers.append(
+                (session.current["country"], session.current["capital"])
+            )
             await q.answer(
                 f"❌ Неверно.\nПравильный ответ:\n{session.current['correct']}",
                 show_alert=True,
