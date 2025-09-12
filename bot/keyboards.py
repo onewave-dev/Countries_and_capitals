@@ -100,7 +100,8 @@ def cards_kb(options: list[str]) -> InlineKeyboardMarkup:
                 buffer = []
     if buffer:
         rows.append(buffer)
-
+    # spacer row to visually separate options from action buttons
+    rows.append([InlineKeyboardButton(" ", callback_data="cards:void")])
     rows.append([InlineKeyboardButton("Показать ответ", callback_data="cards:show")])
     rows.append([InlineKeyboardButton("Пропустить", callback_data="cards:skip")])
     rows.append([InlineKeyboardButton("Завершить", callback_data="cards:finish")])
@@ -152,6 +153,7 @@ def sprint_kb(options: list[str], allow_skip: bool = True) -> InlineKeyboardMark
     if buffer:
         rows.append(buffer)
     if allow_skip:
+        rows.append([InlineKeyboardButton(" ", callback_data="sprint:void")])
         rows.append([InlineKeyboardButton("Пропустить", callback_data="sprint:skip")])
     return InlineKeyboardMarkup(rows)
 
