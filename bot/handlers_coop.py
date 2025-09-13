@@ -279,17 +279,26 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             text = f"✅ Верно\n{session.current_question['country']}"
             if session.current_question["type"] == "country_to_capital":
                 text += f"\nСтолица: {session.current_question['capital']}"
-            try:
-                await context.bot.send_message(session.chat_id, text)
-            except (TelegramError, HTTPError) as e:
-                logger.warning("Failed to send coop correct message: %s", e)
             flag_path = get_flag_image_path(session.current_question["country"])
+            try:
+                await q.edit_message_reply_markup(None)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to clear coop buttons: %s", e)
             if flag_path:
                 try:
                     with flag_path.open("rb") as f:
-                        await context.bot.send_photo(session.chat_id, f)
+                        await context.bot.send_photo(
+                            session.chat_id, f, caption=text
+                        )
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to send coop flag image: %s", e)
+            else:
+                try:
+                    await context.bot.send_message(session.chat_id, text)
+                except (TelegramError, HTTPError) as e:
+                    logger.warning(
+                        "Failed to send coop correct message: %s", e
+                    )
         else:
             await q.answer()
             try:
