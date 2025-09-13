@@ -23,6 +23,11 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "")         # https://<your-service>.onrend
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "secret")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+ENABLE_STARTUP_PRELOAD = os.getenv("ENABLE_STARTUP_PRELOAD", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
@@ -214,7 +219,10 @@ async def on_startup():
         logger.warning("PUBLIC_URL is not set; webhook check skipped")
 
     global facts_task
-    facts_task = asyncio.create_task(facts_preload_loop())
+    if ENABLE_STARTUP_PRELOAD:
+        facts_task = asyncio.create_task(facts_preload_loop())
+    else:
+        logger.info("Startup facts preload disabled")
 
     if application.job_queue:
         application.job_queue.run_repeating(
