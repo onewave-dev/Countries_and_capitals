@@ -28,8 +28,23 @@ from .facts import get_random_fact
 logger = logging.getLogger(__name__)
 
 
-async def _next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send the next card or finish the session if queue is empty."""
+async def _next_card(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, replace_message: bool = True
+) -> None:
+    """Send the next card or finish the session if queue is empty.
+
+    Parameters
+    ----------
+    update: Update
+        The incoming update triggering the next card.
+    context: ContextTypes.DEFAULT_TYPE
+        The context provided by the handler.
+    replace_message: bool, optional
+        When ``True`` (default), the previous message with options is edited with
+        the next question. When ``False``, the next question is sent as a new
+        message instead of editing the existing one. This is used after sending
+        feedback on a user's answer so that the feedback message is preserved.
+    """
 
     session: CardSession = context.user_data["card_session"]
     if not session.queue:
@@ -50,7 +65,7 @@ async def _next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         question["answer"],
     )
 
-    if update.callback_query:
+    if update.callback_query and replace_message:
         q = update.callback_query
         try:
             await q.edit_message_text(
@@ -62,8 +77,10 @@ async def _next_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             logger.warning("Failed to send card: %s", e)
             return
     else:
+        chat_id = update.effective_chat.id
         try:
-            await update.effective_message.reply_text(
+            await context.bot.send_message(
+                chat_id,
                 question["prompt"],
                 reply_markup=cards_kb(question["options"]),
                 parse_mode="HTML",
@@ -224,8 +241,8 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await q.edit_message_text(
                 f"❌ Неверно.\nПравильный ответ:\n{current['answer']}"
             )
-        await asyncio.sleep(2)
-        await _next_card(update, context)
+        await asyncio.sleep(3)
+        await _next_card(update, context, replace_message=False)
         return
 
     action = parts[1]
