@@ -194,7 +194,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 if current["type"] == "country_to_capital"
                 else current["country"]
             )
-            fact = await get_random_fact(subject)
+            fact = await get_random_fact(subject, reserve_subject=current["country"])
             text = f"✅ Верно\n{current['country']}"
             if current["type"] == "country_to_capital":
                 text += f"\nСтолица: {current['capital']}"

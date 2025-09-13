@@ -156,11 +156,14 @@ def random_reserve_fact(subject: str) -> str | None:
 
 
 
-async def get_random_fact(subject: str) -> str:
-    """Return a random fact about ``subject`` using OpenAI.
+async def get_random_fact(subject: str, *, reserve_subject: str | None = None) -> str:
+    """Return a random fact about ``subject``.
 
-    Facts are cached per subject with optional persistence. Each fact is
-    truncated to 150 characters. On any error a fallback string is returned.
+    Facts are fetched from OpenAI and cached. If fetching fails, a reserve fact
+    bundled with the repository is returned for ``reserve_subject`` (or
+    ``subject`` if it is ``None``). Each fact is prefixed with
+    ``"Интересный факт: "``. If no fact can be provided, a fallback message is
+    returned.
     """
 
     try:
@@ -169,11 +172,13 @@ async def get_random_fact(subject: str) -> str:
         facts = []
 
     if facts:
-        return random.choice(facts)
+        return f"Интересный факт: {random.choice(facts)}"
 
     asyncio.create_task(ensure_facts(subject))
-    reserve = random_reserve_fact(subject)
-    return reserve or "Интересный факт недоступен"
+    reserve = random_reserve_fact(reserve_subject or subject)
+    if reserve:
+        return f"Интересный факт: {reserve}"
+    return "Интересный факт недоступен"
 
 async def preload_facts(subjects: Iterable[str]) -> None:
     """Preload facts for ``subjects`` with simple rate limiting and retries."""
