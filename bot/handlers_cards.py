@@ -2,6 +2,7 @@
 
 import logging
 import random
+import asyncio
 from typing import Optional
 
 from telegram import Update
@@ -21,6 +22,7 @@ from .keyboards import (
 )
 from .flags import get_country_flag
 from .handlers_menu import WELCOME
+from .facts import get_random_fact
 
 
 logger = logging.getLogger(__name__)
@@ -175,6 +177,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current = session.current
 
     if len(parts) == 3 and parts[1] == "opt":
+        await q.answer()
         index = int(parts[2])
         item = (
             current["country"]
@@ -186,14 +189,20 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if item not in session.unknown_set:
                 get_user_stats(context.user_data).to_repeat.discard(item)
                 session.stats["known"] += 1
-            await q.answer("✅ Верно", show_alert=True)
+            subject = (
+                current["capital"]
+                if current["type"] == "country_to_capital"
+                else current["country"]
+            )
+            fact = await get_random_fact(subject)
+            await q.edit_message_text(f"✅ Верно\n\n{fact}")
         else:
             session.unknown_set.add(item)
             add_to_repeat(context.user_data, {item})
-            await q.answer(
-                f"❌ Неверно.\nПравильный ответ:\n{current['answer']}",
-                show_alert=True,
+            await q.edit_message_text(
+                f"❌ Неверно.\nПравильный ответ:\n{current['answer']}"
             )
+        await asyncio.sleep(2)
         await _next_card(update, context)
         return
 
