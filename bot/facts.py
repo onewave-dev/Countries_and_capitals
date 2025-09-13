@@ -1,4 +1,7 @@
-"""Fetch and cache random facts using OpenAI."""
+"""Fetch and cache random facts using OpenAI.
+
+Facts are cached per subject and can be reused across modes.
+"""
 
 from __future__ import annotations
 
