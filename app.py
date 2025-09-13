@@ -63,11 +63,6 @@ def load_data() -> DataSource:
 
 DATA = load_data()
 
-# ===== Admin Routes =====
-from bot.routes import router as admin_router
-
-app.include_router(admin_router)
-
 # ===== Keyboards & Handlers =====
 from bot.keyboards import main_menu_kb
 from bot.handlers_menu import cmd_start, cb_menu
