@@ -106,6 +106,7 @@ class SprintSession:
     score: int = 0
     questions_asked: int = 0
     wrong_answers: list[tuple[str, str]] = field(default_factory=list)
+    asked_countries: set[str] = field(default_factory=set)
 
 
 @dataclass

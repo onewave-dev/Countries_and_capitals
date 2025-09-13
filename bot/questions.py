@@ -4,12 +4,21 @@ from .state import DataSource
 from .flags import get_country_flag
 
 
-def pick_question(data: DataSource, continent: str | None, mode: str):
+def pick_question(
+    data: DataSource,
+    continent: str | None,
+    mode: str,
+    asked_countries: set[str] | None = None,
+):
     """Generate a question based on the provided mode."""
     # mode: "country_to_capital" | "capital_to_country" | "mixed"
     countries = data.countries(continent)
+    if asked_countries:
+        countries = [c for c in countries if c not in asked_countries]
     if not countries:
-        raise RuntimeError("No countries for selected continent")
+        countries = data.countries(continent)
+        if asked_countries is not None:
+            asked_countries.clear()
 
     country = random.choice(countries)
     capital = data.capital_by_country[country]
