@@ -173,7 +173,13 @@ async def get_random_fact(subject: str, *, reserve_subject: str | None = None) -
     if facts:
         return f"Интересный факт: {random.choice(facts)}"
 
-    asyncio.create_task(ensure_facts(subject))
+    async def _wrap() -> None:
+        try:
+            await ensure_facts(subject)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to refresh facts for %s", subject)
+
+    asyncio.create_task(_wrap())
     reserve = random_reserve_fact(reserve_subject or subject)
     if reserve:
         return f"Интересный факт: {reserve}"
