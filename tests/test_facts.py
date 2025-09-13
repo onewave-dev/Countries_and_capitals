@@ -3,6 +3,8 @@ from pathlib import Path
 import types
 import asyncio
 import json
+import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -50,6 +52,26 @@ def load_facts(monkeypatch, cache_path: Path | None = None):
     sys.modules.pop("bot.facts", None)
     import bot.facts as facts
     return facts
+
+
+def test_missing_cache_path_logs_warning(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    facts = load_facts(monkeypatch, None)
+    assert "FACTS_CACHE_PATH env var is not set" in caplog.text
+    assert facts._cache_path is None
+
+
+def test_unwritable_cache_path_logs_warning(monkeypatch, tmp_path, caplog):
+    caplog.set_level(logging.WARNING)
+    path = tmp_path / "cache.json"
+    monkeypatch.setenv("FACTS_CACHE_PATH", str(path))
+    monkeypatch.setattr(os, "access", lambda p, m: False)
+    sys.modules.pop("bot.facts", None)
+    import bot.facts as facts
+
+    assert "not writable" in caplog.text
+    assert facts._cache_path is None
 
 
 def test_fact_length(monkeypatch, tmp_path):
