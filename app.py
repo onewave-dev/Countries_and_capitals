@@ -1,8 +1,6 @@
 import os
 import logging
 import asyncio
-import contextlib
-from datetime import timedelta
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -15,7 +13,6 @@ from telegram.ext import (
 )
 
 from bot.utils import tg_call
-from bot.facts import preload_facts
 
 # ===== ENV =====
 load_dotenv()
@@ -24,19 +21,8 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "")         # https://<your-service>.onrend
 WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "secret")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-ENABLE_STARTUP_PRELOAD = os.getenv("ENABLE_STARTUP_PRELOAD", "").lower() in {
-    "1",
-    "true",
-    "yes",
-}
-
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
-
-FACTS_REFRESH_INTERVAL = timedelta(
-    days=int(os.getenv("FACTS_REFRESH_INTERVAL_DAYS", "5"))
-)
-facts_task: asyncio.Task | None = None
 
 if not BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
@@ -114,16 +100,6 @@ async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
-async def facts_preload_loop(interval: timedelta) -> None:
-    """Periodically preload facts to refresh cache."""
-    while True:
-        try:
-            await preload_facts(DATA.countries() + DATA.capitals())
-        except asyncio.CancelledError:  # graceful cancellation
-            break
-        except Exception:  # noqa: BLE001
-            logger.exception("preload_facts failed")
-        await asyncio.sleep(interval.total_seconds())
 
 # ===== FastAPI models =====
 class TelegramUpdate(BaseModel):
@@ -221,14 +197,6 @@ async def on_startup():
     else:
         logger.warning("PUBLIC_URL is not set; webhook check skipped")
 
-    global facts_task
-    if ENABLE_STARTUP_PRELOAD:
-        facts_task = asyncio.create_task(
-            facts_preload_loop(FACTS_REFRESH_INTERVAL)
-        )
-    else:
-        logger.info("Startup facts preload disabled")
-
     if application.job_queue:
         application.job_queue.run_repeating(
             check_webhook, interval=600, first=600
@@ -241,11 +209,5 @@ async def on_startup():
 @app.on_event("shutdown")
 async def on_shutdown():
     logger.info("Application shutdown")
-    global facts_task
-    if facts_task:
-        facts_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await facts_task
-        facts_task = None
     await application.stop()
     await application.shutdown()
