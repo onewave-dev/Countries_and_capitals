@@ -75,3 +75,17 @@ def test_refresh_expired_preserve_fresh(monkeypatch, tmp_path):
     assert saved["лисица"] == data["лисица"]
     assert saved["волк"]["updated_at"] != data["волк"]["updated_at"]
     assert saved["волк"]["facts"] != data["волк"]["facts"]
+
+
+def test_load_cache_ignores_non_dict(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    cache_file = tmp_path / "facts.json"
+
+    now = datetime.now(timezone.utc).isoformat()
+    data = {"ok": {"facts": ["f"], "updated_at": now}, "bad": ["not", "dict"]}
+    cache_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    facts = load_facts(monkeypatch, cache_file)
+
+    assert "ok" in facts._cache
+    assert "bad" not in facts._cache

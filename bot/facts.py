@@ -83,6 +83,8 @@ def _load_cache() -> None:
         return
     now = datetime.now(timezone.utc)
     for subject, entry in raw.items():
+        if not isinstance(entry, dict):
+            continue
         facts = entry.get("facts")
         updated_at = entry.get("updated_at")
         if not facts or not updated_at:
