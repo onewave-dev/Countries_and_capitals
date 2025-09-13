@@ -73,8 +73,29 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             capital = DATA.capital_by_country.get(country, "")
             flag = get_country_flag(country)
             lines.append(f"{flag} {country} - Столица: {capital}")
+
+        # Telegram messages are limited to 4096 characters. Chunk the list
+        # so that selecting "Весь мир" does not exceed that limit.
         title = f"{continent}:\n"
-        await q.edit_message_text(title + "\n".join(lines), reply_markup=list_result_kb())
+        chunks = []
+        current = title
+        for line in lines:
+            line_text = f"{line}\n"
+            if len(current) + len(line_text) > 4000:
+                chunks.append(current.rstrip())
+                current = line_text
+            else:
+                current += line_text
+        chunks.append(current.rstrip())
+
+        chat_id = update.effective_chat.id
+        if len(chunks) == 1:
+            await q.edit_message_text(chunks[0], reply_markup=list_result_kb())
+        else:
+            await q.edit_message_text(chunks[0])
+            for chunk in chunks[1:-1]:
+                await context.bot.send_message(chat_id, chunk)
+            await context.bot.send_message(chat_id, chunks[-1], reply_markup=list_result_kb())
 
     elif data == "menu:coop":
         await q.edit_message_text(
