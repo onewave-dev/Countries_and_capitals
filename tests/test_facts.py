@@ -44,11 +44,17 @@ class DummyResponse:
         self.content = content
 
 
-def load_facts(monkeypatch, cache_path: Path | None = None):
+def load_facts(
+    monkeypatch, cache_path: Path | None = None, reserve_path: Path | None = None
+):
     if cache_path is not None:
         monkeypatch.setenv("FACTS_CACHE_PATH", str(cache_path))
     else:
         monkeypatch.delenv("FACTS_CACHE_PATH", raising=False)
+    if reserve_path is not None:
+        monkeypatch.setenv("FACTS_RESERVE_PATH", str(reserve_path))
+    else:
+        monkeypatch.delenv("FACTS_RESERVE_PATH", raising=False)
     sys.modules.pop("bot.facts", None)
     import bot.facts as facts
     return facts
@@ -129,4 +135,33 @@ def test_cache_file_ttl(monkeypatch, tmp_path):
     saved = json.loads(cache_file.read_text(encoding="utf-8"))
     assert saved["лиса"]["updated_at"] != old.isoformat()
     assert fact in saved["лиса"]["facts"]
+
+
+def test_reserve_fallback(monkeypatch, tmp_path):
+    reserve_file = tmp_path / "facts_reserve.json"
+    data = {"кот": ["резервный факт 1", "резервный факт 2"]}
+    reserve_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    facts = load_facts(monkeypatch, reserve_path=reserve_file)
+
+    async def fail(subject: str) -> list[str]:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(facts, "ensure_facts", fail)
+
+    calls: list[str | None] = []
+
+    def fake_create_task(coro, *args, **kwargs):
+        subject_val = coro.cr_frame.f_locals.get("subject") if coro.cr_frame else None
+        calls.append(subject_val)
+        coro.close()
+        class Dummy:
+            pass
+        return Dummy()
+
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
+
+    fact = asyncio.run(facts.get_random_fact("кот"))
+    assert fact in {f + " *" for f in data["кот"]}
+    assert calls == ["кот"]
 

@@ -30,6 +30,14 @@ _cache_path_str = os.getenv("FACTS_CACHE_PATH")
 _cache_path = Path(_cache_path_str).expanduser() if _cache_path_str else None
 _logger = logging.getLogger(__name__)
 
+_reserve_path_str = os.getenv("FACTS_RESERVE_PATH")
+_reserve_path = (
+    Path(_reserve_path_str).expanduser()
+    if _reserve_path_str
+    else Path(__file__).resolve().parents[1] / "data" / "facts.json"
+)
+_reserve_cache: dict[str, list[str]] | None = None
+
 REQUEST_DELAY = 1.0  # seconds between requests
 MAX_CONSECUTIVE_429 = 3
 
@@ -106,6 +114,24 @@ def _expired(ts: datetime) -> bool:
     return datetime.now(timezone.utc) - ts > FACTS_TTL
 
 
+def _load_reserve() -> None:
+    """Load reserve facts from JSON file if available."""
+
+    global _reserve_cache
+
+    try:
+        raw = json.loads(_reserve_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        _reserve_cache = {}
+        return
+
+    cache: dict[str, list[str]] = {}
+    for subject, facts in raw.items():
+        if isinstance(facts, list):
+            cache[subject] = [str(f) for f in facts]
+    _reserve_cache = cache
+
+
 async def _fetch_facts(subject: str) -> list[str]:
     llm = ChatOpenAI(
         api_key=os.environ.get("OPENAI_API_KEY"), model="gpt-4o-mini"
@@ -140,9 +166,18 @@ async def get_random_fact(subject: str) -> str:
 
     try:
         facts = await ensure_facts(subject)
+        return random.choice(facts) if facts else "Интересный факт недоступен"
     except Exception:  # noqa: BLE001
-        return "Интересный факт недоступен"
-    return random.choice(facts) if facts else "Интересный факт недоступен"
+        if _reserve_cache is None:
+            _load_reserve()
+        reserve = _reserve_cache.get(subject) if _reserve_cache else None
+        if not reserve:
+            return "Интересный факт недоступен"
+        try:
+            asyncio.create_task(ensure_facts(subject))
+        except Exception:  # pragma: no cover - best effort
+            pass
+        return random.choice(reserve) + " *"
 
 
 async def preload_facts(subjects: Iterable[str]) -> None:
