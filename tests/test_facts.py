@@ -135,7 +135,7 @@ def test_cache_file_ttl(monkeypatch, tmp_path):
     assert fact[len(prefix) :] in saved["лиса"]["facts"]
 
 
-def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path):
+def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path, caplog):
     reserve_data = {"fox": ["fact one", "fact two"]}
     reserve_path = tmp_path / "facts_reserve.json"
     reserve_path.write_text(
@@ -152,7 +152,7 @@ def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path):
 
     monkeypatch.setattr(facts, "ensure_facts", failing)
 
-    tasks = []
+    tasks: list[asyncio.Future] = []
 
     def fake_create_task(coro):
         tasks.append(coro)
@@ -162,10 +162,13 @@ def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path):
 
     monkeypatch.setattr(asyncio, "create_task", fake_create_task)
 
+    caplog.set_level(logging.ERROR)
     fact = asyncio.run(facts.get_random_fact("fox"))
     assert fact in {"Интересный факт: " + f + " *" for f in reserve_data["fox"]}
     assert len(tasks) == 1
-    tasks[0].close()
+    asyncio.run(tasks[0])
+    assert "Failed to refresh facts for fox" in caplog.text
+    assert "Task exception was never retrieved" not in caplog.text
 
 
 def test_fallback_uses_country_fact(monkeypatch, tmp_path):
@@ -199,5 +202,5 @@ def test_fallback_uses_country_fact(monkeypatch, tmp_path):
         facts.get_random_fact("Хельсинки", reserve_subject="Финляндия")
     )
     assert fact == "Интересный факт: страна тысячи озёр *"
-    tasks[0].close()
+    asyncio.run(tasks[0])
 
