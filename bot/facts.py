@@ -41,9 +41,6 @@ _cache_path_str = os.getenv("FACTS_CACHE_PATH")
 _cache_path = Path(_cache_path_str).expanduser() if _cache_path_str else None
 _logger = logging.getLogger(__name__)
 
-REQUEST_DELAY = 1.0  # seconds between requests
-MAX_CONSECUTIVE_429 = 3
-
 
 def _load_cache() -> None:
     global _cache_path
@@ -181,35 +178,49 @@ async def get_random_fact(subject: str, *, reserve_subject: str | None = None) -
     return "Интересный факт недоступен"
 
 async def preload_facts(subjects: Iterable[str]) -> None:
-    """Preload facts for ``subjects`` with simple rate limiting and retries."""
+    """Preload facts for ``subjects`` with exponential backoff."""
 
-    consecutive_429 = 0
     for subject in subjects:
-        for attempt in range(3):
+        attempt = 0
+        while attempt < 3:
             try:
-                await asyncio.sleep(REQUEST_DELAY)
                 await ensure_facts(subject)
-                consecutive_429 = 0
                 break
             except Exception as err:  # noqa: BLE001
                 status = getattr(err, "status_code", None) or getattr(
                     err, "http_status", None
                 )
+                headers = getattr(getattr(err, "response", None), "headers", {})
                 if status == 429:
-                    consecutive_429 += 1
-                    _logger.warning(
-                        "Rate limit hit for %s (attempt %s)", subject, attempt + 1
+                    retry_after = headers.get("Retry-After") or headers.get(
+                        "retry-after"
                     )
-                    if consecutive_429 >= MAX_CONSECUTIVE_429:
-                        _logger.error("Too many 429 responses, aborting preload")
-                        return
-                else:
-                    consecutive_429 = 0
-                    _logger.warning(
-                        "Error preloading facts for %s: %s", subject, err
+                    try:
+                        delay = float(retry_after)
+                    except (TypeError, ValueError):
+                        delay = 1.0
+                    delay *= 2**attempt
+                    remaining = headers.get("x-ratelimit-remaining-requests") or headers.get(
+                        "x-ratelimit-remaining-tokens"
                     )
+                    _logger.warning(
+                        "Rate limit hit for %s (attempt %s), retrying in %.1fs (remaining %s)",
+                        subject,
+                        attempt + 1,
+                        delay,
+                        remaining,
+                    )
+                    await asyncio.sleep(delay)
+                    attempt += 1
+                    continue
+                _logger.warning("Error preloading facts for %s: %s", subject, err)
                 if attempt < 2:
-                    await asyncio.sleep(2 ** attempt)
+                    delay = 2**attempt
+                    _logger.warning("Retrying %s in %.1fs", subject, delay)
+                    await asyncio.sleep(delay)
+                    attempt += 1
+                    continue
+                break
 
 
 _load_cache()
