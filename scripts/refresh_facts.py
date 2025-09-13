@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Refresh facts for countries using OpenAI only when outdated.
+"""Refresh facts for countries and capitals using OpenAI only when outdated.
 
-The script loads the list of countries from ``data/capitals.json`` and an
-existing cache file ``data/facts.json`` if present. For each country the cache
-entry is inspected and refreshed via :func:`bot.facts.ensure_facts` only when
-its ``updated_at`` timestamp is older than :data:`bot.facts.FACTS_TTL` or the
-facts list is missing. Fresh entries are reused. The resulting cache is written
-back to ``data/facts.json``. A summary with the number of updated records is
-logged on completion.
+The script loads the list of subjects (countries and capitals) from
+``data/capitals.json`` via :class:`bot.state.DataSource` and an existing cache
+file ``data/facts.json`` if present. For each subject the cache entry is
+inspected and refreshed via :func:`bot.facts.ensure_facts` only when its
+``updated_at`` timestamp is older than :data:`bot.facts.FACTS_TTL` or the facts
+list is missing. Fresh entries are reused. The resulting cache is written back
+to ``data/facts.json``. A summary with the number of updated records is logged
+on completion.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from bot.facts import FACTS_TTL, ensure_facts
+from bot.state import DataSource
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPITALS_PATH = ROOT / "data" / "capitals.json"
@@ -27,24 +29,24 @@ FACTS_PATH = ROOT / "data" / "facts.json"
 
 
 async def main() -> None:
-    data = json.loads(CAPITALS_PATH.read_text(encoding="utf-8"))
-    countries = sorted(data["capital_by_country"].keys())
+    data = DataSource.load(CAPITALS_PATH)
+    subjects = sorted(set(data.countries() + data.capitals()))
 
     existing: dict[str, dict[str, object]] = {}
     if FACTS_PATH.exists():
         raw = json.loads(FACTS_PATH.read_text(encoding="utf-8"))
-        for country, value in raw.items():
+        for subject, value in raw.items():
             if isinstance(value, dict):
-                existing[country] = value
+                existing[subject] = value
             else:
-                existing[country] = {"facts": value}
+                existing[subject] = {"facts": value}
 
     results: dict[str, dict[str, object]] = {}
     updated = 0
     now = datetime.now(timezone.utc)
 
-    for country in countries:
-        entry = existing.get(country, {})
+    for subject in subjects:
+        entry = existing.get(subject, {})
         facts = entry.get("facts") if isinstance(entry, dict) else None
         updated_at_str = entry.get("updated_at") if isinstance(entry, dict) else None
         refresh = True
@@ -57,18 +59,18 @@ async def main() -> None:
                 pass
             else:
                 if not refresh:
-                    results[country] = {
+                    results[subject] = {
                         "facts": list(facts),
                         "updated_at": updated_at_str,
                     }
                     continue
 
-        new_facts = await ensure_facts(country)
+        new_facts = await ensure_facts(subject)
         if len(new_facts) < 3:
             raise RuntimeError(
-                f"expected 3 facts for {country}, got {len(new_facts)}"
+                f"expected 3 facts for {subject}, got {len(new_facts)}"
             )
-        results[country] = {
+        results[subject] = {
             "facts": new_facts,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }

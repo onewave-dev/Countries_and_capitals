@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Generate facts for every country using OpenAI.
+"""Generate facts for countries and capitals using OpenAI.
 
-The script reads ``data/capitals.json`` to obtain the list of countries and
-queries OpenAI for three facts (each no longer than 150 characters) about each
-country. Results are stored in ``data/facts.json``.
+The script reads ``data/capitals.json`` via :class:`bot.state.DataSource` to
+obtain the list of countries **and** capitals. For each subject OpenAI is
+queried for three facts (each no longer than 150 characters). Results are
+stored in ``data/facts.json`` using the subject as the key and including the
+``updated_at`` timestamp.
 
 On any failure the script prints the error and exits with a non-zero status so
 CI pipelines can detect the failure.
@@ -15,8 +17,10 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from datetime import datetime, timezone
 
 from bot.facts import ensure_facts
+from bot.state import DataSource
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPITALS_PATH = ROOT / "data" / "capitals.json"
@@ -24,15 +28,18 @@ FACTS_PATH = ROOT / "data" / "facts.json"
 
 
 async def main() -> None:
-    data = json.loads(CAPITALS_PATH.read_text(encoding="utf-8"))
-    countries = sorted(data["capital_by_country"].keys())
+    data = DataSource.load(CAPITALS_PATH)
+    subjects = sorted(set(data.countries() + data.capitals()))
 
-    results: dict[str, list[str]] = {}
-    for country in countries:
-        facts = await ensure_facts(country)
+    results: dict[str, dict[str, object]] = {}
+    for subject in subjects:
+        facts = await ensure_facts(subject)
         if len(facts) < 3:
-            raise RuntimeError(f"expected 3 facts for {country}, got {len(facts)}")
-        results[country] = facts
+            raise RuntimeError(f"expected 3 facts for {subject}, got {len(facts)}")
+        results[subject] = {
+            "facts": facts,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     FACTS_PATH.write_text(
         json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"

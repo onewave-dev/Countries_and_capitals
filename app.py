@@ -118,7 +118,7 @@ async def facts_preload_loop(interval: timedelta) -> None:
     """Periodically preload facts to refresh cache."""
     while True:
         try:
-            await preload_facts(DATA.countries())
+            await preload_facts(DATA.countries() + DATA.capitals())
         except asyncio.CancelledError:  # graceful cancellation
             break
         except Exception:  # noqa: BLE001
