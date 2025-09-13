@@ -13,6 +13,7 @@ from telegram.ext import (
 )
 
 from bot.utils import tg_call
+from bot.facts import preload_facts
 
 # ===== ENV =====
 load_dotenv()
@@ -195,6 +196,9 @@ async def on_startup():
             )
     else:
         logger.warning("PUBLIC_URL is not set; webhook check skipped")
+
+    # preload facts asynchronously so regular handling is not blocked
+    asyncio.create_task(preload_facts(DATA.countries()))
 
     if application.job_queue:
         application.job_queue.run_repeating(
