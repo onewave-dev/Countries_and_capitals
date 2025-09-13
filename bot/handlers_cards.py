@@ -20,7 +20,7 @@ from .keyboards import (
     main_menu_kb,
     cards_answer_kb,
 )
-from .flags import get_country_flag
+from .flags import get_country_flag, get_flag_image_path
 from .handlers_menu import WELCOME
 from .facts import get_random_fact
 
@@ -195,7 +195,19 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 else current["country"]
             )
             fact = await get_random_fact(subject)
-            await q.edit_message_text(f"✅ Верно\n\n{fact}")
+            text = f"✅ Верно\n{current['country']}"
+            if current["type"] == "country_to_capital":
+                text += f"\nСтолица: {current['capital']}"
+            if fact:
+                text += f"\n\n{fact}"
+            await q.edit_message_text(text)
+            flag_path = get_flag_image_path(current["country"])
+            if flag_path:
+                try:
+                    with flag_path.open("rb") as f:
+                        await context.bot.send_photo(q.message.chat_id, f)
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to send flag image: %s", e)
         else:
             session.unknown_set.add(item)
             add_to_repeat(context.user_data, {item})

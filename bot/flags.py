@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 try:  # optional dependency
     import country_converter as coco  # type: ignore
@@ -204,6 +205,8 @@ ISO_CODES: dict[str, str] = {
     "Вануату": "VU",
 }
 
+FLAGS_DIR = Path(__file__).resolve().parent.parent / "assets" / "flags"
+
 
 def _code_to_flag(code: str) -> str:
     """Convert ISO alpha-2 country code to an emoji flag."""
@@ -235,3 +238,36 @@ def get_country_flag(country: str) -> str:
     if code:
         return _code_to_flag(code)
     return ""
+
+
+@lru_cache(maxsize=None)
+def get_flag_image_path(country: str) -> Path | None:
+    """Return path to a PNG flag image for ``country`` if available.
+
+    The function looks up the ISO alpha-2 code for ``country`` using
+    :mod:`country_converter` if it is installed, falling back to the
+    :data:`ISO_CODES` mapping.  When a matching PNG file
+    ``assets/flags/{iso}_flag.png`` exists, its :class:`~pathlib.Path` is
+    returned, otherwise ``None`` is returned.
+    """
+
+    if not country:
+        return None
+
+    code: str | None = None
+    if _converter is not None:
+        try:
+            converted = _converter.convert(names=country, to="ISO2", not_found=None)
+            if isinstance(converted, str) and len(converted) == 2:
+                code = converted
+        except Exception:
+            pass
+
+    if code is None:
+        code = ISO_CODES.get(country)
+
+    if not code:
+        return None
+
+    path = FLAGS_DIR / f"{code.lower()}_flag.png"
+    return path if path.exists() else None
