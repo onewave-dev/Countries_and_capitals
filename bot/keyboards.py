@@ -10,11 +10,12 @@ SPACER = "────────────"
 
 
 def main_menu_kb() -> InlineKeyboardMarkup:
-    """Top-level menu with three game modes."""
+    """Top-level menu with four learning modes."""
     rows = [
         [InlineKeyboardButton("📘 Флэш-карточки", callback_data="menu:cards")],
         [InlineKeyboardButton("⏱ Игра на время", callback_data="menu:sprint")],
         [InlineKeyboardButton("🤝 Дуэт против Бота", callback_data="menu:coop")],
+        [InlineKeyboardButton("📋 Учить по списку стран", callback_data="menu:list")],
     ]
     return InlineKeyboardMarkup(rows)
 
@@ -167,6 +168,16 @@ def sprint_result_kb(continent: str) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("Играть еще раз", callback_data=f"sprint:{continent}")],
         [InlineKeyboardButton("В меню", callback_data="sprint:menu")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def list_result_kb() -> InlineKeyboardMarkup:
+    """Keyboard shown after displaying countries list."""
+
+    rows = [
+        [InlineKeyboardButton("Другой континент", callback_data="menu:list")],
+        [InlineKeyboardButton("В меню", callback_data="menu:main")],
     ]
     return InlineKeyboardMarkup(rows)
 
