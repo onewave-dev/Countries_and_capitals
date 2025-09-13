@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import contextlib
+from datetime import timedelta
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -32,7 +33,9 @@ ENABLE_STARTUP_PRELOAD = os.getenv("ENABLE_STARTUP_PRELOAD", "").lower() in {
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
-FACTS_REFRESH_INTERVAL = 24 * 60 * 60  # preload facts once per day
+FACTS_REFRESH_INTERVAL = timedelta(
+    days=int(os.getenv("FACTS_REFRESH_INTERVAL_DAYS", "5"))
+)
 facts_task: asyncio.Task | None = None
 
 if not BOT_TOKEN:
@@ -111,7 +114,7 @@ async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
-async def facts_preload_loop() -> None:
+async def facts_preload_loop(interval: timedelta) -> None:
     """Periodically preload facts to refresh cache."""
     while True:
         try:
@@ -120,7 +123,7 @@ async def facts_preload_loop() -> None:
             break
         except Exception:  # noqa: BLE001
             logger.exception("preload_facts failed")
-        await asyncio.sleep(FACTS_REFRESH_INTERVAL)
+        await asyncio.sleep(interval.total_seconds())
 
 # ===== FastAPI models =====
 class TelegramUpdate(BaseModel):
@@ -220,7 +223,9 @@ async def on_startup():
 
     global facts_task
     if ENABLE_STARTUP_PRELOAD:
-        facts_task = asyncio.create_task(facts_preload_loop())
+        facts_task = asyncio.create_task(
+            facts_preload_loop(FACTS_REFRESH_INTERVAL)
+        )
     else:
         logger.info("Startup facts preload disabled")
 
