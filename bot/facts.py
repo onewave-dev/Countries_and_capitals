@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import random
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,10 @@ _cache: dict[str, dict[str, object]] = {}
 FACTS_TTL = timedelta(days=5)
 _cache_path_str = os.getenv("FACTS_CACHE_PATH")
 _cache_path = Path(_cache_path_str).expanduser() if _cache_path_str else None
+_logger = logging.getLogger(__name__)
+
+REQUEST_DELAY = 1.0  # seconds between requests
+MAX_CONSECUTIVE_429 = 3
 
 
 def _load_cache() -> None:
@@ -106,14 +111,33 @@ async def get_random_fact(subject: str) -> str:
 
 
 async def preload_facts(subjects: Iterable[str]) -> None:
-    """Preload facts for ``subjects`` with retries on failures."""
+    """Preload facts for ``subjects`` with simple rate limiting and retries."""
 
+    consecutive_429 = 0
     for subject in subjects:
         for attempt in range(3):
             try:
+                await asyncio.sleep(REQUEST_DELAY)
                 await ensure_facts(subject)
+                consecutive_429 = 0
                 break
-            except Exception:  # noqa: BLE001
+            except Exception as err:  # noqa: BLE001
+                status = getattr(err, "status_code", None) or getattr(
+                    err, "http_status", None
+                )
+                if status == 429:
+                    consecutive_429 += 1
+                    _logger.warning(
+                        "Rate limit hit for %s (attempt %s)", subject, attempt + 1
+                    )
+                    if consecutive_429 >= MAX_CONSECUTIVE_429:
+                        _logger.error("Too many 429 responses, aborting preload")
+                        return
+                else:
+                    consecutive_429 = 0
+                    _logger.warning(
+                        "Error preloading facts for %s: %s", subject, err
+                    )
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
 
