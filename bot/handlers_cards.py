@@ -22,7 +22,7 @@ from .keyboards import (
 )
 from .flags import get_country_flag, get_flag_image_path
 from .handlers_menu import WELCOME
-from .facts import get_random_fact
+from .facts import get_static_fact
 
 
 logger = logging.getLogger(__name__)
@@ -206,12 +206,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if item not in session.unknown_set:
                 get_user_stats(context.user_data).to_repeat.discard(item)
                 session.stats["known"] += 1
-            subject = (
-                current["capital"]
-                if current["type"] == "country_to_capital"
-                else current["country"]
-            )
-            fact = await get_random_fact(subject, reserve_subject=current["country"])
+            fact = get_static_fact(current["country"])
             text = f"✅ Верно\n{current['country']}"
             if current["type"] == "country_to_capital":
                 text += f"\nСтолица: {current['capital']}"
