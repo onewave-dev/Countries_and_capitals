@@ -23,8 +23,11 @@ async def _ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Generate and send the next sprint question."""
 
     session: SprintSession = context.user_data["sprint_session"]
-    question = pick_question(DATA, session.continent_filter, session.mode)
+    question = pick_question(
+        DATA, session.continent_filter, session.mode, session.asked_countries
+    )
     session.current = question
+    session.asked_countries.add(question["country"])
 
     allow_skip = context.user_data.get("sprint_allow_skip", True)
     reply_markup = sprint_kb(question["options"], allow_skip)
