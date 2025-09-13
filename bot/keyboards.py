@@ -120,6 +120,12 @@ def cards_answer_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def fact_more_kb() -> InlineKeyboardMarkup:
+    """Keyboard with a single button to request another fact."""
+    rows = [[InlineKeyboardButton("Еще один факт", callback_data="cards:more_fact")]]
+    return InlineKeyboardMarkup(rows)
+
+
 def cards_repeat_kb() -> InlineKeyboardMarkup:
     """Keyboard shown after session to repeat unknown cards."""
     rows = [

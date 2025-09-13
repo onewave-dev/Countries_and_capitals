@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import random
 from pathlib import Path
+import logging
+
+from openai import AsyncOpenAI
 
 # Load static facts at import time
 _facts_path = Path(__file__).resolve().parents[1] / "data" / "facts_st.json"
@@ -13,6 +16,12 @@ try:
 except Exception:  # noqa: BLE001
     _facts = {}
 
+logger = logging.getLogger(__name__)
+try:  # Gracefully handle missing API key during tests
+    _client: AsyncOpenAI | None = AsyncOpenAI()
+except Exception:  # noqa: BLE001
+    _client = None
+
 
 def get_static_fact(country: str) -> str:
     """Return a random fact for ``country`` prefixed with ``Интересный факт:``."""
@@ -20,3 +29,30 @@ def get_static_fact(country: str) -> str:
     if facts:
         return f"Интересный факт: {random.choice(facts)}"
     return "Интересный факт недоступен"
+
+
+async def generate_llm_fact(country: str, exclude: str) -> str:
+    """Generate an additional fact about ``country`` avoiding ``exclude``.
+
+    The returned string is trimmed to 150 characters. Any errors during the
+    API call result in a fallback message.
+    """
+
+    prompt = (
+        f"Сообщи один интересный факт о стране {country}. "
+        f"Не повторяй этот факт: {exclude}. "
+        "Ответ не длиннее 150 символов."
+    )
+    if not _client:
+        return "Факт недоступен"
+    try:
+        resp = await _client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=80,
+        )
+        text = resp.choices[0].message.content.strip().replace("\n", " ")
+        return text[:150]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("LLM fact generation failed: %s", e)
+        return "Факт недоступен"

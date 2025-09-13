@@ -19,10 +19,11 @@ from .keyboards import (
     cards_finish_kb,
     main_menu_kb,
     cards_answer_kb,
+    fact_more_kb,
 )
 from .flags import get_country_flag, get_flag_image_path
 from .handlers_menu import WELCOME
-from .facts import get_static_fact
+from .facts import get_static_fact, generate_llm_fact
 
 
 logger = logging.getLogger(__name__)
@@ -210,26 +211,39 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             text = f"✅ Верно\n{current['country']}"
             if current["type"] == "country_to_capital":
                 text += f"\nСтолица: {current['capital']}"
-            if fact:
-                text += f"\n\n{fact}"
+            fact_msg = (
+                f"{text}\n\n{fact}\n\nНажми кнопку ниже, чтобы узнать еще один факт"
+            )
             flag_path = get_flag_image_path(current["country"])
             try:
                 await q.edit_message_reply_markup(None)
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to clear card buttons: %s", e)
+            msg = None
             if flag_path:
                 try:
                     with flag_path.open("rb") as flag_file:
-                        await context.bot.send_photo(
-                            q.message.chat_id, flag_file, caption=text
+                        msg = await context.bot.send_photo(
+                            q.message.chat_id,
+                            flag_file,
+                            caption=fact_msg,
+                            reply_markup=fact_more_kb(),
                         )
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to send flag image: %s", e)
             else:
                 try:
-                    await context.bot.send_message(q.message.chat_id, text)
+                    msg = await context.bot.send_message(
+                        q.message.chat_id,
+                        fact_msg,
+                        reply_markup=fact_more_kb(),
+                    )
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to send card feedback: %s", e)
+            if msg:
+                session.fact_message_id = msg.message_id
+                session.fact_subject = current["country"]
+                session.fact_text = fact
         else:
             session.unknown_set.add(item)
             add_to_repeat(context.user_data, {item})
@@ -241,6 +255,32 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     action = parts[1]
+    if action == "more_fact":
+        await q.answer()
+        if session.fact_message_id != q.message.message_id:
+            return
+        extra = await generate_llm_fact(
+            session.fact_subject or "",
+            session.fact_text or "",
+        )
+        base = q.message.caption or q.message.text or ""
+        base = base.replace(
+            "\n\nНажми кнопку ниже, чтобы узнать еще один факт", ""
+        )
+        try:
+            if q.message.photo:
+                await q.edit_message_caption(
+                    caption=f"{base}\nЕще один факт: {extra}", reply_markup=None
+                )
+            else:
+                await q.edit_message_text(
+                    f"{base}\nЕще один факт: {extra}", reply_markup=None
+                )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send extra fact: %s", e)
+        session.fact_message_id = None
+        return
+
     if action == "show":
         await q.answer()
         item = current["country"] if current["type"] == "country_to_capital" else current["capital"]
