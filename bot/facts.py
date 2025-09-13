@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 _cache_path_str = os.getenv("FACTS_CACHE_PATH")
 _cache_path = Path(_cache_path_str).expanduser() if _cache_path_str else None
 _logger = logging.getLogger(__name__)
+_OFFLINE = os.getenv("FACTS_OFFLINE") not in {None, "", "0"}
 
 
 def _load_cache() -> None:
@@ -129,8 +130,12 @@ async def _fetch_facts(subject: str) -> list[str]:
 
 async def ensure_facts(subject: str) -> list[str]:
     entry = _cache.get(subject)
-    if entry and not _expired(entry["updated_at"]):
-        return entry["facts"]  # type: ignore[return-value]
+    if entry:
+        if _OFFLINE or not _expired(entry["updated_at"]):
+            return entry["facts"]  # type: ignore[return-value]
+
+    if _OFFLINE:
+        return []
 
     facts = await _fetch_facts(subject)
     if not facts:
@@ -172,14 +177,6 @@ async def get_random_fact(subject: str, *, reserve_subject: str | None = None) -
 
     if facts:
         return f"Интересный факт: {random.choice(facts)}"
-
-    async def _wrap() -> None:
-        try:
-            await ensure_facts(subject)
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to refresh facts for %s", subject)
-
-    asyncio.create_task(_wrap())
     reserve = random_reserve_fact(reserve_subject or subject)
     if reserve:
         return f"Интересный факт: {reserve}"

@@ -135,7 +135,7 @@ def test_cache_file_ttl(monkeypatch, tmp_path):
     assert fact[len(prefix) :] in saved["лиса"]["facts"]
 
 
-def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path, caplog):
+def test_fallback_uses_reserve_without_scheduling(monkeypatch, tmp_path):
     reserve_data = {"fox": ["fact one", "fact two"]}
     reserve_path = tmp_path / "facts_reserve.json"
     reserve_path.write_text(
@@ -152,23 +152,20 @@ def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path, capl
 
     monkeypatch.setattr(facts, "ensure_facts", failing)
 
-    tasks: list[asyncio.Future] = []
+    called = False
 
     def fake_create_task(coro):
-        tasks.append(coro)
+        nonlocal called
+        called = True
         class Dummy:
             pass
         return Dummy()
 
     monkeypatch.setattr(asyncio, "create_task", fake_create_task)
 
-    caplog.set_level(logging.ERROR)
     fact = asyncio.run(facts.get_random_fact("fox"))
     assert fact in {"Интересный факт: " + f + " *" for f in reserve_data["fox"]}
-    assert len(tasks) == 1
-    asyncio.run(tasks[0])
-    assert "Failed to refresh facts for fox" in caplog.text
-    assert "Task exception was never retrieved" not in caplog.text
+    assert not called
 
 
 def test_fallback_uses_country_fact(monkeypatch, tmp_path):
@@ -188,10 +185,11 @@ def test_fallback_uses_country_fact(monkeypatch, tmp_path):
 
     monkeypatch.setattr(facts, "ensure_facts", failing)
 
-    tasks = []
+    called = False
 
     def fake_create_task(coro):
-        tasks.append(coro)
+        nonlocal called
+        called = True
         class Dummy:
             pass
         return Dummy()
@@ -202,5 +200,17 @@ def test_fallback_uses_country_fact(monkeypatch, tmp_path):
         facts.get_random_fact("Хельсинки", reserve_subject="Финляндия")
     )
     assert fact == "Интересный факт: страна тысячи озёр *"
-    asyncio.run(tasks[0])
+    assert not called
+
+
+def test_ensure_facts_offline_returns_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv("FACTS_OFFLINE", "1")
+    facts = load_facts(monkeypatch, tmp_path / "cache.json")
+
+    async def failing(subject: str):  # pragma: no cover - should not be called
+        raise AssertionError("_fetch_facts called in offline mode")
+
+    monkeypatch.setattr(facts, "_fetch_facts", failing)
+    result = asyncio.run(facts.ensure_facts("wolf"))
+    assert result == []
 
