@@ -11,7 +11,7 @@ from httpx import HTTPError
 from app import DATA
 from .state import SprintSession, record_sprint_result
 from .questions import pick_question
-from .flags import get_country_flag
+from .flags import get_country_flag, get_flag_image_path
 from .keyboards import sprint_kb, sprint_result_kb
 from .handlers_menu import WELCOME, main_menu_kb
 
@@ -160,7 +160,21 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session.questions_asked += 1
         if option == session.current["correct"]:
             session.score += 1
-            await q.answer("✅ Верно", show_alert=True)
+            await q.answer()
+            text = f"✅ Верно\n{session.current['country']}"
+            if session.current["type"] == "country_to_capital":
+                text += f"\nСтолица: {session.current['capital']}"
+            try:
+                await context.bot.send_message(q.message.chat_id, text)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send sprint correct message: %s", e)
+            flag_path = get_flag_image_path(session.current["country"])
+            if flag_path:
+                try:
+                    with flag_path.open("rb") as f:
+                        await context.bot.send_photo(q.message.chat_id, f)
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to send sprint flag image: %s", e)
             logger.debug(
                 "Sprint correct answer by user %s: score=%d questions=%d",
                 session.user_id,
@@ -171,10 +185,14 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session.wrong_answers.append(
                 (session.current["country"], session.current["capital"])
             )
-            await q.answer(
-                f"❌ Неверно.\nПравильный ответ:\n{session.current['correct']}",
-                show_alert=True,
-            )
+            await q.answer()
+            try:
+                await context.bot.send_message(
+                    q.message.chat_id,
+                    f"❌ Неверно.\nПравильный ответ:\n{session.current['correct']}",
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send sprint wrong message: %s", e)
             logger.debug(
                 "Sprint wrong answer by user %s: score=%d questions=%d",
                 session.user_id,

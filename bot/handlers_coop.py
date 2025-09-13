@@ -22,7 +22,7 @@ from .keyboards import (
     coop_difficulty_kb,
     coop_answer_kb,
 )
-from .flags import get_country_flag
+from .flags import get_country_flag, get_flag_image_path
 
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -275,12 +275,30 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         correct = option == session.current_question["correct"]
         if correct:
             session.team_score += 1
-            await q.answer("✅ Верно", show_alert=True)
+            await q.answer()
+            text = f"✅ Верно\n{session.current_question['country']}"
+            if session.current_question["type"] == "country_to_capital":
+                text += f"\nСтолица: {session.current_question['capital']}"
+            try:
+                await context.bot.send_message(session.chat_id, text)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send coop correct message: %s", e)
+            flag_path = get_flag_image_path(session.current_question["country"])
+            if flag_path:
+                try:
+                    with flag_path.open("rb") as f:
+                        await context.bot.send_photo(session.chat_id, f)
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to send coop flag image: %s", e)
         else:
-            await q.answer(
-                f"❌ Неверно.\nПравильный ответ:\n{session.current_question['correct']}",
-                show_alert=True,
-            )
+            await q.answer()
+            try:
+                await context.bot.send_message(
+                    session.chat_id,
+                    f"❌ Неверно.\nПравильный ответ:\n{session.current_question['correct']}",
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send coop wrong message: %s", e)
 
         if session.turn == 0:
             session.turn = 1
