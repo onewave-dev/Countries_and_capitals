@@ -23,6 +23,9 @@ from langchain_core.messages import HumanMessage
 _cache: dict[str, dict[str, object]] = {}
 
 FACTS_TTL = timedelta(days=5)
+
+logger = logging.getLogger(__name__)
+
 _cache_path_str = os.getenv("FACTS_CACHE_PATH")
 _cache_path = Path(_cache_path_str).expanduser() if _cache_path_str else None
 _logger = logging.getLogger(__name__)
@@ -32,8 +35,40 @@ MAX_CONSECUTIVE_429 = 3
 
 
 def _load_cache() -> None:
-    if not _cache_path or not _cache_path.exists():
+    global _cache_path
+
+    if not _cache_path:
+        logger.warning(
+            "FACTS_CACHE_PATH env var is not set; facts cache will not persist"
+        )
         return
+
+    try:
+        _cache_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.warning(
+            "FACTS_CACHE_PATH '%s' is not writable; facts cache will not persist",
+            _cache_path,
+        )
+        _cache_path = None
+        return
+
+    writable = (
+        os.access(_cache_path, os.W_OK)
+        if _cache_path.exists()
+        else os.access(_cache_path.parent, os.W_OK)
+    )
+    if not writable:
+        logger.warning(
+            "FACTS_CACHE_PATH '%s' is not writable; facts cache will not persist",
+            _cache_path,
+        )
+        _cache_path = None
+        return
+
+    if not _cache_path.exists():
+        return
+
     try:
         raw = json.loads(_cache_path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
