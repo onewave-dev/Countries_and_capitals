@@ -84,7 +84,9 @@ def test_fact_length(monkeypatch, tmp_path):
     monkeypatch.setattr(ChatOpenAI, "ainvoke", fake_ainvoke)
 
     fact = asyncio.run(facts.get_random_fact("кот"))
-    assert len(fact) <= 150
+    prefix = "Интересный факт: "
+    assert fact.startswith(prefix)
+    assert len(fact) <= 150 + len(prefix)
     assert all(len(f) <= 150 for f in facts._cache["кот"]["facts"])
 
 
@@ -128,7 +130,9 @@ def test_cache_file_ttl(monkeypatch, tmp_path):
     assert "лиса" in facts._cache
     saved = json.loads(cache_file.read_text(encoding="utf-8"))
     assert saved["лиса"]["updated_at"] != old.isoformat()
-    assert fact in saved["лиса"]["facts"]
+    prefix = "Интересный факт: "
+    assert fact.startswith(prefix)
+    assert fact[len(prefix) :] in saved["лиса"]["facts"]
 
 
 def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path):
@@ -159,7 +163,41 @@ def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path):
     monkeypatch.setattr(asyncio, "create_task", fake_create_task)
 
     fact = asyncio.run(facts.get_random_fact("fox"))
-    assert fact in {f + " *" for f in reserve_data["fox"]}
+    assert fact in {"Интересный факт: " + f + " *" for f in reserve_data["fox"]}
     assert len(tasks) == 1
+    tasks[0].close()
+
+
+def test_fallback_uses_country_fact(monkeypatch, tmp_path):
+    reserve_data = {"Финляндия": ["страна тысячи озёр"]}
+    reserve_path = tmp_path / "facts_reserve.json"
+    reserve_path.write_text(
+        json.dumps(reserve_data, ensure_ascii=False), encoding="utf-8"
+    )
+
+    facts = load_facts(monkeypatch, tmp_path / "cache.json")
+    monkeypatch.setattr(
+        facts, "_reserve_facts", json.loads(reserve_path.read_text("utf-8"))
+    )
+
+    async def failing(subject: str):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(facts, "ensure_facts", failing)
+
+    tasks = []
+
+    def fake_create_task(coro):
+        tasks.append(coro)
+        class Dummy:
+            pass
+        return Dummy()
+
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
+
+    fact = asyncio.run(
+        facts.get_random_fact("Хельсинки", reserve_subject="Финляндия")
+    )
+    assert fact == "Интересный факт: страна тысячи озёр *"
     tasks[0].close()
 
