@@ -22,6 +22,17 @@ from langchain_core.messages import HumanMessage
 # subject -> {"facts": [..], "updated_at": datetime}
 _cache: dict[str, dict[str, object]] = {}
 
+# fallback facts shipped with the repository
+_reserve_facts_path = (
+    Path(__file__).resolve().parents[1] / "data" / "facts_reserve.json"
+)
+try:
+    _reserve_facts: dict[str, list[str]] = json.loads(
+        _reserve_facts_path.read_text(encoding="utf-8")
+    )
+except Exception:  # noqa: BLE001
+    _reserve_facts = {}
+
 FACTS_TTL = timedelta(days=5)
 
 logger = logging.getLogger(__name__)
@@ -131,6 +142,20 @@ async def ensure_facts(subject: str) -> list[str]:
     return facts
 
 
+
+def random_reserve_fact(subject: str) -> str | None:
+    """Return a random bundled fact about ``subject``.
+
+    The result is suffixed with ``" *"`` to mark it as a fallback.
+    """
+
+    facts = _reserve_facts.get(subject)
+    if not facts:
+        return None
+    return random.choice(facts) + " *"
+
+
+
 async def get_random_fact(subject: str) -> str:
     """Return a random fact about ``subject`` using OpenAI.
 
@@ -141,9 +166,14 @@ async def get_random_fact(subject: str) -> str:
     try:
         facts = await ensure_facts(subject)
     except Exception:  # noqa: BLE001
-        return "Интересный факт недоступен"
-    return random.choice(facts) if facts else "Интересный факт недоступен"
+        facts = []
 
+    if facts:
+        return random.choice(facts)
+
+    asyncio.create_task(ensure_facts(subject))
+    reserve = random_reserve_fact(subject)
+    return reserve or "Интересный факт недоступен"
 
 async def preload_facts(subjects: Iterable[str]) -> None:
     """Preload facts for ``subjects`` with simple rate limiting and retries."""
@@ -179,6 +209,9 @@ async def preload_facts(subjects: Iterable[str]) -> None:
 
 _load_cache()
 
-
-__all__ = ["get_random_fact", "ensure_facts", "preload_facts"]
-
+__all__ = [
+    "get_random_fact",
+    "ensure_facts",
+    "preload_facts",
+    "random_reserve_fact",
+]
