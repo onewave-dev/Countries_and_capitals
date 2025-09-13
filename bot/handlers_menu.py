@@ -7,7 +7,8 @@ from telegram.ext import ContextTypes
 
 from app import DATA
 from .state import CardSession
-from .keyboards import main_menu_kb, continent_kb, sprint_start_kb
+from .keyboards import main_menu_kb, continent_kb, sprint_start_kb, list_result_kb
+from .flags import get_country_flag
 
 WELCOME = (
     "Привет! Это бот для тренировки знаний столицы ↔ страна.\n"
@@ -25,9 +26,14 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data = q.data
 
-    if data in {"menu:cards", "menu:sprint"}:
+    if data in {"menu:cards", "menu:sprint", "menu:list"}:
         mode = data.split(":")[1]
-        text = "📘 Флэш-карточки: выбери континент." if mode == "cards" else "⏱ Игра на время: выбери континент."
+        if mode == "cards":
+            text = "📘 Флэш-карточки: выбери континент."
+        elif mode == "sprint":
+            text = "⏱ Игра на время: выбери континент."
+        else:
+            text = "📋 Учить по списку: выбери континент."
         await q.edit_message_text(text, reply_markup=continent_kb(f"menu:{mode}"))
 
     elif data.startswith("menu:cards:"):
@@ -57,8 +63,24 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=sprint_start_kb(continent),
         )
 
+    elif data.startswith("menu:list:"):
+        parts = data.split(":", 2)
+        continent = parts[2]
+        continent_filter = None if continent == "Весь мир" else continent
+        countries = DATA.countries(continent_filter)
+        lines = []
+        for country in countries:
+            capital = DATA.capital_by_country.get(country, "")
+            flag = get_country_flag(country)
+            lines.append(f"{flag} {country} - Столица: {capital}")
+        title = f"{continent}:\n"
+        await q.edit_message_text(title + "\n".join(lines), reply_markup=list_result_kb())
+
     elif data == "menu:coop":
         await q.edit_message_text(
             "🤝 Дуэт против Бота: запускай в групповом чате командой /coop_capitals",
             reply_markup=None,
         )
+
+    elif data == "menu:main":
+        await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
