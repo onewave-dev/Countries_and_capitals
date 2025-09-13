@@ -31,14 +31,17 @@ CONTINENTS = [
 ]
 
 
-def continent_kb(prefix: str) -> InlineKeyboardMarkup:
+def continent_kb(prefix: str, include_menu: bool = False) -> InlineKeyboardMarkup:
     """Keyboard for choosing a continent.
 
     ``prefix`` should be ``menu:cards`` or ``menu:sprint`` so that callback data
     stays within the ``^menu:`` namespace while the user makes selections.
+    ``include_menu`` optionally appends a button back to the main menu.
     """
 
     rows = [[InlineKeyboardButton(c, callback_data=f"{prefix}:{c}")] for c in CONTINENTS]
+    if include_menu:
+        rows.append([InlineKeyboardButton("В меню", callback_data="menu:main")])
     return InlineKeyboardMarkup(rows)
 
 
