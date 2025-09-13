@@ -1,20 +1,9 @@
-name: Generate Facts
-on:
-  schedule:
-    - cron: "0 3 * * 1"   # каждое понедельник 03:00 UTC
-jobs:
-  generate-facts:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: python scripts/generate_facts.py
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      - uses: actions/upload-artifact@v3
-        with:
-          name: facts
-          path: data/facts.json
+steps:
+  - uses: actions/checkout@v3
+  - uses: actions/setup-python@v4
+    with:
+      python-version: "3.10"
+  - run: pip install -r requirements.txt
+  - run: python -m scripts.generate_facts
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
