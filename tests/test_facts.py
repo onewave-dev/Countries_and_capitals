@@ -130,3 +130,36 @@ def test_cache_file_ttl(monkeypatch, tmp_path):
     assert saved["лиса"]["updated_at"] != old.isoformat()
     assert fact in saved["лиса"]["facts"]
 
+
+def test_fallback_uses_reserve_and_schedules_refresh(monkeypatch, tmp_path):
+    reserve_data = {"fox": ["fact one", "fact two"]}
+    reserve_path = tmp_path / "facts_reserve.json"
+    reserve_path.write_text(
+        json.dumps(reserve_data, ensure_ascii=False), encoding="utf-8"
+    )
+
+    facts = load_facts(monkeypatch, tmp_path / "cache.json")
+    monkeypatch.setattr(
+        facts, "_reserve_facts", json.loads(reserve_path.read_text("utf-8"))
+    )
+
+    async def failing(subject: str):
+        raise RuntimeError("fail")
+
+    monkeypatch.setattr(facts, "ensure_facts", failing)
+
+    tasks = []
+
+    def fake_create_task(coro):
+        tasks.append(coro)
+        class Dummy:
+            pass
+        return Dummy()
+
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
+
+    fact = asyncio.run(facts.get_random_fact("fox"))
+    assert fact in {f + " *" for f in reserve_data["fox"]}
+    assert len(tasks) == 1
+    tasks[0].close()
+
