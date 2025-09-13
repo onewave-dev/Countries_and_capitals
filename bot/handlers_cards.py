@@ -200,14 +200,24 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 text += f"\nСтолица: {current['capital']}"
             if fact:
                 text += f"\n\n{fact}"
-            await q.edit_message_text(text)
             flag_path = get_flag_image_path(current["country"])
+            try:
+                await q.edit_message_reply_markup(None)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to clear card buttons: %s", e)
             if flag_path:
                 try:
-                    with flag_path.open("rb") as f:
-                        await context.bot.send_photo(q.message.chat_id, f)
+                    with flag_path.open("rb") as flag_file:
+                        await context.bot.send_photo(
+                            q.message.chat_id, flag_file, caption=text
+                        )
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to send flag image: %s", e)
+            else:
+                try:
+                    await context.bot.send_message(q.message.chat_id, text)
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to send card feedback: %s", e)
         else:
             session.unknown_set.add(item)
             add_to_repeat(context.user_data, {item})

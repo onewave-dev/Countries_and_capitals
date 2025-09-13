@@ -164,17 +164,26 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             text = f"✅ Верно\n{session.current['country']}"
             if session.current["type"] == "country_to_capital":
                 text += f"\nСтолица: {session.current['capital']}"
-            try:
-                await context.bot.send_message(q.message.chat_id, text)
-            except (TelegramError, HTTPError) as e:
-                logger.warning("Failed to send sprint correct message: %s", e)
             flag_path = get_flag_image_path(session.current["country"])
+            try:
+                await q.edit_message_reply_markup(None)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to clear sprint buttons: %s", e)
             if flag_path:
                 try:
                     with flag_path.open("rb") as f:
-                        await context.bot.send_photo(q.message.chat_id, f)
+                        await context.bot.send_photo(
+                            q.message.chat_id, f, caption=text
+                        )
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to send sprint flag image: %s", e)
+            else:
+                try:
+                    await context.bot.send_message(q.message.chat_id, text)
+                except (TelegramError, HTTPError) as e:
+                    logger.warning(
+                        "Failed to send sprint correct message: %s", e
+                    )
             logger.debug(
                 "Sprint correct answer by user %s: score=%d questions=%d",
                 session.user_id,
