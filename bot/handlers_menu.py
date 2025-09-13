@@ -34,7 +34,12 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = "⏱ Игра на время: выбери континент."
         else:
             text = "📋 Учить по списку: выбери континент."
-        await q.edit_message_text(text, reply_markup=continent_kb(f"menu:{mode}"))
+        await q.edit_message_text(
+            text,
+            reply_markup=continent_kb(
+                f"menu:{mode}", include_menu=(mode == "list")
+            ),
+        )
 
     elif data.startswith("menu:cards:"):
         parts = data.split(":", 2)
