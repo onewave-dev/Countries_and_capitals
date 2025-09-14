@@ -59,7 +59,7 @@ async def _next_question(
         try:
             await q.edit_message_text(
                 question["prompt"],
-                reply_markup=cards_kb(question["options"]),
+                reply_markup=cards_kb(question["options"], prefix="test"),
                 parse_mode="HTML",
             )
         except (TelegramError, HTTPError) as e:
@@ -71,7 +71,7 @@ async def _next_question(
             await context.bot.send_message(
                 chat_id,
                 question["prompt"],
-                reply_markup=cards_kb(question["options"]),
+                reply_markup=cards_kb(question["options"], prefix="test"),
                 parse_mode="HTML",
             )
         except (TelegramError, HTTPError) as e:
@@ -107,6 +107,10 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     q = update.callback_query
     parts = q.data.split(":")
+
+    if parts == ["test", "void"]:
+        await q.answer()
+        return
 
     if parts == ["test", "continent"]:
         await q.answer()
@@ -188,7 +192,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await q.edit_message_text(
                 f"{current['prompt']}\n\n<b>Ответ: {current['answer']}</b>",
                 parse_mode="HTML",
-                reply_markup=cards_answer_kb(),
+                reply_markup=cards_answer_kb(prefix="test"),
             )
         except BadRequest:
             logger.debug("Duplicate show answer for user %s", session.user_id)
