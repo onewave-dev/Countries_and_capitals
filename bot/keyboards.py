@@ -201,24 +201,49 @@ def coop_join_kb(session_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def coop_rounds_kb(session_id: str) -> InlineKeyboardMarkup:
+def coop_rounds_kb(session_id: str, player_id: int) -> InlineKeyboardMarkup:
     """Keyboard to select number of rounds."""
 
     rows = [
-        [InlineKeyboardButton("5", callback_data=f"coop:rounds:{session_id}:5")],
-        [InlineKeyboardButton("10", callback_data=f"coop:rounds:{session_id}:10")],
-        [InlineKeyboardButton("15", callback_data=f"coop:rounds:{session_id}:15")],
+        [
+            InlineKeyboardButton(
+                "5", callback_data=f"coop:rounds:{session_id}:{player_id}:5"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "10", callback_data=f"coop:rounds:{session_id}:{player_id}:10"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "15", callback_data=f"coop:rounds:{session_id}:{player_id}:15"
+            )
+        ],
     ]
     return InlineKeyboardMarkup(rows)
 
 
-def coop_difficulty_kb(session_id: str) -> InlineKeyboardMarkup:
+def coop_difficulty_kb(session_id: str, player_id: int) -> InlineKeyboardMarkup:
     """Keyboard to select bot difficulty."""
 
     rows = [
-        [InlineKeyboardButton("🟢 Лёгкий", callback_data=f"coop:diff:{session_id}:easy")],
-        [InlineKeyboardButton("🟡 Средний", callback_data=f"coop:diff:{session_id}:medium")],
-        [InlineKeyboardButton("🔴 Сложный", callback_data=f"coop:diff:{session_id}:hard")],
+        [
+            InlineKeyboardButton(
+                "🟢 Лёгкий", callback_data=f"coop:diff:{session_id}:{player_id}:easy"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🟡 Средний",
+                callback_data=f"coop:diff:{session_id}:{player_id}:medium",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "🔴 Сложный", callback_data=f"coop:diff:{session_id}:{player_id}:hard"
+            )
+        ],
     ]
     return InlineKeyboardMarkup(rows)
 
