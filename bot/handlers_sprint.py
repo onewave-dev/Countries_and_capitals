@@ -223,7 +223,11 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 await context.bot.send_message(
                     q.message.chat_id,
-                    f"❌ Неверно.\nПравильный ответ:\n{session.current['correct']}",
+                    (
+                        "❌ <b>Неверно</b>."
+                        f"\n\nПравильный ответ:\n<b>{session.current['correct']}</b>"
+                    ),
+                    parse_mode="HTML",
                 )
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send sprint wrong message: %s", e)

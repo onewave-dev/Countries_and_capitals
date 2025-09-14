@@ -364,14 +364,14 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Игрок 1 → {session.answer_options[session.players[0]]} {'✅' if session.answers[session.players[0]] else '❌'}\n"
         f"Игрок 2 → {session.answer_options[session.players[1]]} {'✅' if session.answers[session.players[1]] else '❌'}\n"
         f"Бот-соперник → {'✅' if bot_correct else '❌'}\n"
-        f"Правильный ответ: {correct_display}\n"
+        f"Правильный ответ: <b>{correct_display}</b>\n"
         f"Счёт: Команда {session.team_score} — Бот {session.bot_score} (Раунд {session.current_round}/{session.total_rounds})"
     )
 
     for pid in session.players:
         chat_id = session.player_chats[pid]
         try:
-            await context.bot.send_message(chat_id, result_text)
+            await context.bot.send_message(chat_id, result_text, parse_mode="HTML")
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send coop round result: %s", e)
 

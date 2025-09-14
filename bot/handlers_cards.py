@@ -258,7 +258,11 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 await context.bot.send_message(
                     q.message.chat_id,
-                    f"❌ Неверно.\nПравильный ответ:\n{current['answer']}",
+                    (
+                        "❌ <b>Неверно</b>."
+                        f"\n\nПравильный ответ:\n<b>{current['answer']}</b>"
+                    ),
+                    parse_mode="HTML",
                 )
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send card feedback: %s", e)
