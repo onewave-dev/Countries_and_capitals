@@ -15,12 +15,16 @@ SPACER = "────────────"
 
 
 def main_menu_kb() -> InlineKeyboardMarkup:
-    """Top-level menu with four learning modes."""
+    """Top-level menu with learning modes and games."""
+
     rows = [
-        [InlineKeyboardButton("📘 Флэш-карточки", callback_data="menu:cards")],
-        [InlineKeyboardButton("⏱ Игра на время", callback_data="menu:sprint")],
-        [InlineKeyboardButton("🤝 Дуэт против Бота", callback_data="menu:coop")],
-        [InlineKeyboardButton("📋 Учить по списку стран", callback_data="menu:list")],
+        [InlineKeyboardButton("ОБУЧЕНИЕ", callback_data="menu:void")],
+        [InlineKeyboardButton("📘 Флэш-карточки", callback_data="menu:cards")],
+        [InlineKeyboardButton("📋 Учить по спискам", callback_data="menu:list")],
+        [InlineKeyboardButton("📝 Тест", callback_data="menu:test")],
+        [InlineKeyboardButton("ИГРЫ", callback_data="menu:void")],
+        [InlineKeyboardButton("⏱ Игра на время", callback_data="menu:sprint")],
+        [InlineKeyboardButton("🤝 Дуэт против Бота", callback_data="menu:coop")],
     ]
     return InlineKeyboardMarkup(rows)
 
