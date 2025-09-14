@@ -45,6 +45,13 @@ def continent_kb(prefix: str, include_menu: bool = False) -> InlineKeyboardMarku
     return InlineKeyboardMarkup(rows)
 
 
+def back_to_menu_kb() -> InlineKeyboardMarkup:
+    """Keyboard with a single button that returns to the main menu."""
+
+    rows = [[InlineKeyboardButton("В меню", callback_data="menu:main")]]
+    return InlineKeyboardMarkup(rows)
+
+
 def direction_kb(prefix: str, continent: str) -> InlineKeyboardMarkup:
     """Keyboard for choosing question direction.
 

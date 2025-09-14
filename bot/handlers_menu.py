@@ -7,7 +7,13 @@ from telegram.ext import ContextTypes
 
 from app import DATA
 from .state import CardSession
-from .keyboards import main_menu_kb, continent_kb, sprint_start_kb, list_result_kb
+from .keyboards import (
+    main_menu_kb,
+    continent_kb,
+    sprint_start_kb,
+    list_result_kb,
+    back_to_menu_kb,
+)
 from .flags import get_country_flag
 
 WELCOME = (
@@ -105,7 +111,7 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "menu:coop":
         await q.edit_message_text(
             "🤝 Дуэт против Бота: запускай в групповом чате командой /coop_capitals",
-            reply_markup=None,
+            reply_markup=back_to_menu_kb(),
         )
 
     elif data == "menu:main":
