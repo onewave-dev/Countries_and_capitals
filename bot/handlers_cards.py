@@ -54,9 +54,22 @@ async def _next_card(
         return
 
     is_last = len(session.queue) == 1
-    item = session.queue.pop(0)
+    raw = session.queue.pop(0)
+    if isinstance(raw, tuple):
+        country, direction = raw
+        item = (
+            country
+            if direction == "country_to_capital"
+            else DATA.capital_by_country[country]
+        )
+    else:
+        item = raw
+        if raw in DATA.capital_by_country:
+            direction = "country_to_capital"
+        else:
+            direction = "capital_to_country"
     question = make_card_question(
-        DATA, item, session.mode, session.continent_filter
+        DATA, item, direction, session.continent_filter
     )
     session.current = question  # dynamic attribute to store current card
     session.stats["shown"] += 1
@@ -168,7 +181,14 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Session setup: cards:<continent>:<direction>
         _, continent, direction = parts
         continent_filter: Optional[str] = None if continent == "Весь мир" else continent
-        queue = DATA.items(continent_filter, direction)
+        if direction == "mixed":
+            countries = DATA.countries(continent_filter)
+            queue = [
+                (c, random.choice(["country_to_capital", "capital_to_country"]))
+                for c in countries
+            ]
+        else:
+            queue = DATA.items(continent_filter, direction)
         random.shuffle(queue)
         session = CardSession(
             user_id=update.effective_user.id,
@@ -329,10 +349,13 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if action == "skip":
         await q.answer()
-        item = current["country"] if current["type"] == "country_to_capital" else current["capital"]
+        item = (
+            current["country"]
+            if current["type"] == "country_to_capital"
+            else current["capital"]
+        )
         session.unknown_set.add(item)
         add_to_repeat(context.user_data, {item})
-        session.queue.append(item)
         await _next_card(update, context)
         return
 

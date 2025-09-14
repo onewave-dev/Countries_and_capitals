@@ -68,7 +68,11 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         continent = parts[2]
         context.user_data["continent"] = continent
         continent_filter = None if continent == "Весь мир" else continent
-        queue = DATA.items(continent_filter, "mixed")
+        countries = DATA.countries(continent_filter)
+        queue = [
+            (c, random.choice(["country_to_capital", "capital_to_country"]))
+            for c in countries
+        ]
         random.shuffle(queue)
         session = CardSession(
             user_id=update.effective_user.id,
