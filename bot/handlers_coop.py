@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import random
 import uuid
+import asyncio
 from typing import Dict
 
 import logging
@@ -273,17 +274,17 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         option = session.current_question["options"][idx]
         correct = option == session.current_question["correct"]
+        await q.answer()
+        try:
+            await q.edit_message_reply_markup(None)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to clear coop buttons: %s", e)
         if correct:
             session.team_score += 1
-            await q.answer()
             text = f"✅ Верно\n{session.current_question['country']}"
             if session.current_question["type"] == "country_to_capital":
                 text += f"\nСтолица: {session.current_question['capital']}"
             flag_path = get_flag_image_path(session.current_question["country"])
-            try:
-                await q.edit_message_reply_markup(None)
-            except (TelegramError, HTTPError) as e:
-                logger.warning("Failed to clear coop buttons: %s", e)
             if flag_path:
                 try:
                     with flag_path.open("rb") as f:
@@ -300,7 +301,6 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         "Failed to send coop correct message: %s", e
                     )
         else:
-            await q.answer()
             try:
                 await context.bot.send_message(
                     session.chat_id,
@@ -313,7 +313,15 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session.turn = 1
             try:
                 await q.edit_message_text(
-                    f"Игрок 1: {option} {'✅' if correct else '❌'}\nИгрок 2: {session.current_question['prompt']}",
+                    f"Игрок 1: {option} {'✅' if correct else '❌'}",
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to show first player's answer: %s", e)
+            await asyncio.sleep(1)
+            try:
+                await context.bot.send_message(
+                    session.chat_id,
+                    f"Игрок 2: {session.current_question['prompt']}",
                     reply_markup=coop_answer_kb(
                         session.session_id,
                         session.players[1],
@@ -365,6 +373,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.warning("Failed to send bot answer: %s", e)
             return
 
+        await asyncio.sleep(1)
         # Schedule next round or finish
         context.application.job_queue.run_once(
             _next_round,

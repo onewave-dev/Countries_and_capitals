@@ -2,6 +2,7 @@
 
 import logging
 import time
+import asyncio
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -19,8 +20,24 @@ from .handlers_menu import WELCOME, main_menu_kb
 logger = logging.getLogger(__name__)
 
 
-async def _ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Generate and send the next sprint question."""
+async def _ask_question(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    replace_message: bool = True,
+) -> None:
+    """Generate and send the next sprint question.
+
+    Parameters
+    ----------
+    update: Update
+        Incoming update.
+    context: ContextTypes.DEFAULT_TYPE
+        Handler context.
+    replace_message: bool, optional
+        When ``True`` (default) edits the previous message with the new question.
+        When ``False`` the question is sent as a new message so that the prior
+        feedback remains visible.
+    """
 
     session: SprintSession = context.user_data["sprint_session"]
     question = pick_question(
@@ -32,7 +49,7 @@ async def _ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     allow_skip = context.user_data.get("sprint_allow_skip", True)
     reply_markup = sprint_kb(question["options"], allow_skip)
 
-    if update.callback_query:
+    if update.callback_query and replace_message:
         q = update.callback_query
         try:
             await q.edit_message_text(
@@ -42,9 +59,13 @@ async def _ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             logger.warning("Failed to send sprint question: %s", e)
             return
     else:
+        chat_id = update.effective_chat.id
         try:
-            await update.effective_message.reply_text(
-                question["prompt"], reply_markup=reply_markup, parse_mode="HTML"
+            await context.bot.send_message(
+                chat_id,
+                question["prompt"],
+                reply_markup=reply_markup,
+                parse_mode="HTML",
             )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send sprint question: %s", e)
@@ -196,6 +217,10 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             await q.answer()
             try:
+                await q.edit_message_reply_markup(None)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to clear sprint buttons: %s", e)
+            try:
                 await context.bot.send_message(
                     q.message.chat_id,
                     f"❌ Неверно.\nПравильный ответ:\n{session.current['correct']}",
@@ -208,7 +233,8 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 session.score,
                 session.questions_asked,
             )
-        await _ask_question(update, context)
+        await asyncio.sleep(1)
+        await _ask_question(update, context, replace_message=False)
         return
 
     if action == "skip":
@@ -217,12 +243,21 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session.wrong_answers.append(
             (session.current["country"], session.current["capital"])
         )
+        try:
+            await q.edit_message_reply_markup(None)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to clear sprint buttons: %s", e)
+        try:
+            await context.bot.send_message(q.message.chat_id, "⏭ Пропуск")
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send sprint skip message: %s", e)
         logger.debug(
             "Sprint question skipped by user %s: score=%d questions=%d",
             session.user_id,
             session.score,
             session.questions_asked,
         )
-        await _ask_question(update, context)
+        await asyncio.sleep(1)
+        await _ask_question(update, context, replace_message=False)
         return
 
