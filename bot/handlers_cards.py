@@ -270,11 +270,11 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             if q.message.photo:
                 await q.edit_message_caption(
-                    caption=f"{base}\nЕще один факт: {extra}", reply_markup=None
+                    caption=f"{base}\n\nЕще один факт: {extra}", reply_markup=None
                 )
             else:
                 await q.edit_message_text(
-                    f"{base}\nЕще один факт: {extra}", reply_markup=None
+                    f"{base}\n\nЕще один факт: {extra}", reply_markup=None
                 )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send extra fact: %s", e)
