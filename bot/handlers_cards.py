@@ -72,6 +72,7 @@ async def _next_card(
     )
     session.current = question  # dynamic attribute to store current card
     session.stats["shown"] += 1
+    session.current_answered = False
 
     logger.debug(
         "Generated card question for user %s: %s -> %s",
@@ -125,7 +126,7 @@ async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     reply_markup = cards_finish_kb()
     if session.stats["known"] < session.stats["shown"]:
-        if hasattr(session, "current"):
+        if hasattr(session, "current") and not session.current_answered:
             item = (
                 session.current["country"]
                 if session.current["type"] == "country_to_capital"
@@ -286,6 +287,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send card feedback: %s", e)
+        session.current_answered = True
         await asyncio.sleep(3)
         await _next_card(update, context, replace_message=False)
         return
@@ -361,6 +363,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session.fact_message_id = msg.message_id
             session.fact_subject = current["country"]
             session.fact_text = fact
+        session.current_answered = True
         await asyncio.sleep(3)
         await _next_card(update, context, replace_message=False)
         return
@@ -379,6 +382,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         session.unknown_set.add(item)
         add_to_repeat(context.user_data, {item})
+        session.current_answered = True
         await _next_card(update, context)
         return
 
