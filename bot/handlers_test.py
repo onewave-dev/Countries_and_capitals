@@ -176,9 +176,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 f"Осталось вопросов {len(session.queue)})"
             )
             fact = get_static_fact(current["country"])
-            text = current["country"]
-            if current["type"] == "country_to_capital":
-                text += f"\nСтолица: {current['capital']}"
+            text = f"{current['country']}\nСтолица: {current['capital']}"
             fact_msg = (
                 f"{progress}\n\n{text}\n\n{fact}\n\nНажми кнопку ниже, чтобы узнать еще один факт"
             )
@@ -261,9 +259,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to clear test buttons: %s", e)
         fact = get_static_fact(current["country"])
-        text = current["country"]
-        if current["type"] == "country_to_capital":
-            text += f"\nСтолица: {current['capital']}"
+        text = f"{current['country']}\nСтолица: {current['capital']}"
         fact_msg = (
             f"{text}\n\n{fact}\n\nНажми кнопку ниже, чтобы узнать еще один факт"
         )
