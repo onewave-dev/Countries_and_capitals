@@ -8,7 +8,7 @@ from httpx import HTTPError
 from .handlers_coop import _get_sessions, _find_user_session
 
 
-SESSION_ENDED = "Сессия прекращена. Для запуска прогаммы используйте /старт"
+SESSION_ENDED = "Сессия прекращена. Для запуска прогаммы используйте /start"
 
 
 async def cmd_quit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
