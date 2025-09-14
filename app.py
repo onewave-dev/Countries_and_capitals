@@ -64,6 +64,7 @@ from bot.handlers_sprint import cb_sprint
 from bot.handlers_coop import cb_coop, cmd_coop_capitals, cmd_coop_test
 from bot.handlers_stats import cmd_stats
 
+
 # Register handlers
 application.add_handler(CommandHandler("start", cmd_start))
 application.add_handler(CallbackQueryHandler(cb_menu, pattern="^menu:"))
