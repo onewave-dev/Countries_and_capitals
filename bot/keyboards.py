@@ -217,9 +217,11 @@ def sprint_kb(options: list[str], allow_skip: bool = True) -> InlineKeyboardMark
                 buffer = []
     if buffer:
         rows.append(buffer)
+    # spacer row to visually separate options from action buttons
+    rows.append([InlineKeyboardButton(SPACER, callback_data="sprint:void")])
     if allow_skip:
-        rows.append([InlineKeyboardButton(SPACER, callback_data="sprint:void")])
         rows.append([InlineKeyboardButton("Пропустить", callback_data="sprint:skip")])
+    rows.append([InlineKeyboardButton("Прервать игру", callback_data="sprint:stop")])
     return InlineKeyboardMarkup(rows)
 
 

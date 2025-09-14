@@ -134,6 +134,19 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to return to menu: %s", e)
         return
+    if action == "stop":
+        await q.answer()
+        job = context.user_data.pop("sprint_job", None)
+        if job:
+            job.schedule_removal()
+        context.user_data.pop("sprint_session", None)
+        context.user_data.pop("sprint_allow_skip", None)
+        try:
+            await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to return to menu: %s", e)
+        logger.info("Sprint stopped early by user %s", update.effective_user.id)
+        return
     if action not in {"opt", "skip"}:
         await q.answer()
         # Session setup: sprint:<continent>
