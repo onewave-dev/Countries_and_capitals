@@ -49,11 +49,15 @@ async def generate_llm_fact(country: str, exclude: str) -> str:
     if not _client:
         return "Факт недоступен"
     try:
-        resp = await _client.chat.completions.create(
-            model=_llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=80,
-        )
+        kwargs = {
+            "model": _llm_model,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if _llm_model.startswith("o"):
+            kwargs["max_completion_tokens"] = 80
+        else:
+            kwargs["max_tokens"] = 80
+        resp = await _client.chat.completions.create(**kwargs)
         text = resp.choices[0].message.content.strip().replace("\n", " ")
         return text[:150]
     except Exception as e:  # noqa: BLE001
