@@ -199,30 +199,52 @@ async def _finish_match(context: ContextTypes.DEFAULT_TYPE, session_id: str) -> 
 async def cmd_coop_capitals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Create a new cooperative match and provide a join code."""
 
-    if update.effective_chat.type != "private":
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if chat.type != "private":
         try:
-            await update.message.reply_text(
-                "Команду /coop_capitals можно использовать только в личке."
-            )
+            if update.message:
+                await update.message.reply_text(
+                    "Команду /coop_capitals можно использовать только в личке."
+                )
+            else:
+                await context.bot.send_message(
+                    chat.id, "Команду /coop_capitals можно использовать только в личке."
+                )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to notify coop_capitals restriction: %s", e)
         return
 
     sessions = _get_sessions(context)
-    _, existing = _find_user_session(sessions, update.effective_user.id)
+    _, existing = _find_user_session(sessions, user.id)
     if existing:
-        await update.message.reply_text("У вас уже есть активный матч. Используйте /coop_cancel для отмены.")
+        try:
+            if update.message:
+                await update.message.reply_text(
+                    "У вас уже есть активный матч. Используйте /coop_cancel для отмены."
+                )
+            else:
+                await context.bot.send_message(
+                    chat.id,
+                    "У вас уже есть активный матч. Используйте /coop_cancel для отмены.",
+                )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to notify existing coop match: %s", e)
         return
 
     session_id = uuid.uuid4().hex[:8]
     session = CoopSession(session_id=session_id)
-    session.players.append(update.effective_user.id)
-    session.player_chats[update.effective_user.id] = update.effective_chat.id
+    session.players.append(user.id)
+    session.player_chats[user.id] = chat.id
     sessions[session_id] = session
     context.user_data["coop_pending"] = {"session_id": session_id, "stage": "name"}
 
     try:
-        await update.message.reply_text("Матч создан. Как вас зовут?")
+        if update.message:
+            await update.message.reply_text("Матч создан. Как вас зовут?")
+        else:
+            await context.bot.send_message(chat.id, "Матч создан. Как вас зовут?")
     except (TelegramError, HTTPError) as e:
         logger.warning("Failed to request player name: %s", e)
 

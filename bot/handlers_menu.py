@@ -129,11 +129,9 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id, chunks[-1], reply_markup=list_result_kb())
 
     elif data == "menu:coop":
-        from telegram import Update
         from .handlers_coop import cmd_coop_capitals
 
-        fake_update = Update(update.update_id, message=q.message)
-        await cmd_coop_capitals(fake_update, context)
+        await cmd_coop_capitals(update, context)
         try:
             await q.message.delete()
         except Exception:
