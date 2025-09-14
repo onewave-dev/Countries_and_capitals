@@ -10,27 +10,36 @@ from telegram import (
 
 # Text longer than this will be placed on its own row instead of pairing.
 LONG_OPTION = 15
-# Separator line between answer options and other buttons.
-SPACER = "────────────"
+# Width of section headings like "ОБУЧЕНИЕ" surrounded by lines.
+SECTION_WIDTH = 36
+LINE_CHAR = "─"
+SPACER = LINE_CHAR * 12
+
+
+def _section_heading(text: str) -> str:
+    """Return ``text`` centered with dashes filling the width.
+
+    Two extra spaces are added on both sides of ``text`` so that the visual
+    length of the resulting string stays consistent between different
+    headings.
+    """
+
+    label = f"  {text}  "
+    pad = max(SECTION_WIDTH - len(label), 0)
+    left = pad // 2
+    right = pad - left
+    return f"{LINE_CHAR * left}{label}{LINE_CHAR * right}"
 
 
 def main_menu_kb() -> InlineKeyboardMarkup:
     """Top-level menu with learning modes and games."""
 
     rows = [
-        [
-            InlineKeyboardButton(
-                f"{SPACER} ОБУЧЕНИЕ {SPACER}", callback_data="menu:void"
-            )
-        ],
+        [InlineKeyboardButton(_section_heading("ОБУЧЕНИЕ"), callback_data="menu:void")],
         [InlineKeyboardButton("📘 Флэш-карточки", callback_data="menu:cards")],
         [InlineKeyboardButton("📋 Учить по спискам", callback_data="menu:list")],
         [InlineKeyboardButton("📝 Тест", callback_data="menu:test")],
-        [
-            InlineKeyboardButton(
-                f"{SPACER} ИГРЫ {SPACER}", callback_data="menu:void"
-            )
-        ],
+        [InlineKeyboardButton(_section_heading("ИГРЫ"), callback_data="menu:void")],
         [InlineKeyboardButton("⏱ Игра на время", callback_data="menu:sprint")],
         [InlineKeyboardButton("🤝 Дуэт против Бота", callback_data="menu:coop")],
     ]
