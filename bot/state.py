@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Set
+
 import orjson
+from telegram.ext import Job
 
 
 @dataclass
@@ -128,6 +130,7 @@ class CoopSession:
     answer_options: Dict[int, str] = field(default_factory=dict)
     question_message_ids: Dict[int, int] = field(default_factory=dict)
     current_question: Dict[str, Any] | None = None
+    jobs: Dict[str, Job] = field(default_factory=dict)
 
 
 @dataclass

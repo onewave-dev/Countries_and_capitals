@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import random
 import uuid
@@ -69,11 +68,27 @@ async def _start_round(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
             logger.warning("Failed to send coop question: %s", e)
 
 
+async def _run_next_round(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Job callback to trigger the next round."""
+
+    session_id: str = context.job.data["session_id"]
+    sessions = _get_sessions(context)
+    session = sessions.get(session_id)
+    if not session:
+        return
+    await _start_round(context, session)
+
+
 async def _finish_match(context: ContextTypes.DEFAULT_TYPE, session_id: str) -> None:
     sessions = _get_sessions(context)
     session = sessions.pop(session_id, None)
     if not session:
         return
+
+    job = session.jobs.get("next_round")
+    if job:
+        job.schedule_removal()
+    session.jobs.clear()
 
     if session.team_score > session.bot_score:
         result = "Команда победила!"
@@ -321,6 +336,11 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _finish_match(context, session.session_id)
         return
 
-    await asyncio.sleep(1)
-    await _start_round(context, session)
+    job = context.application.job_queue.run_once(
+        _run_next_round,
+        1,
+        data={"session_id": session.session_id},
+        name=f"coop_next_round_{session.session_id}",
+    )
+    session.jobs["next_round"] = job
 
