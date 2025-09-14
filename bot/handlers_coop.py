@@ -249,6 +249,50 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     sessions = _get_sessions(context)
 
+    if action == "rounds":
+        session_id = parts[2]
+        player_id = int(parts[3])
+        rounds = int(parts[4])
+        session = sessions.get(session_id)
+        if not session:
+            await q.answer()
+            return
+        if update.effective_user.id not in session.players:
+            await q.answer("Не вы участвуете", show_alert=True)
+            return
+        if player_id != update.effective_user.id:
+            await q.answer("Не ваша кнопка", show_alert=True)
+            return
+        session.total_rounds = rounds
+        await q.answer()
+        try:
+            await q.edit_message_reply_markup(None)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to clear rounds keyboard: %s", e)
+        return
+
+    if action == "diff":
+        session_id = parts[2]
+        player_id = int(parts[3])
+        difficulty = parts[4]
+        session = sessions.get(session_id)
+        if not session:
+            await q.answer()
+            return
+        if update.effective_user.id not in session.players:
+            await q.answer("Не вы участвуете", show_alert=True)
+            return
+        if player_id != update.effective_user.id:
+            await q.answer("Не ваша кнопка", show_alert=True)
+            return
+        session.difficulty = difficulty
+        await q.answer()
+        try:
+            await q.edit_message_reply_markup(None)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to clear difficulty keyboard: %s", e)
+        return
+
     if action == "cont":
         session_id = parts[2]
         continent = parts[3]
