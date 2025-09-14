@@ -14,15 +14,17 @@ try:  # pragma: no cover - best effort for missing token during tests
     from app import DATA
 except RuntimeError:  # pragma: no cover - token not set
     DATA = None  # type: ignore
-from .state import TestSession
+from .state import TestSession, add_to_repeat
 from .keyboards import (
     cards_kb,
     cards_answer_kb,
     back_to_menu_kb,
     continent_kb,
+    fact_more_kb,
 )
 from .questions import make_card_question
-from .flags import get_country_flag
+from .flags import get_country_flag, get_flag_image_path
+from .facts import get_static_fact, generate_llm_fact
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +88,7 @@ async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not session:
         return
 
-    text = f"{session.stats['correct']} правильных из {session.stats['total']}"
+    text = f"{session.stats['correct']} правильных из {session.total_questions}"
     if session.unknown_set:
         lines = []
         for country in sorted(session.unknown_set):
@@ -125,6 +127,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         countries = DATA.countries()
         queue = random.sample(countries, k=min(30, len(countries)))
         session = TestSession(user_id=update.effective_user.id, queue=queue)
+        session.total_questions = len(queue)
         context.user_data["test_session"] = session
         await _next_question(update, context)
         return
@@ -135,12 +138,14 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "skip",
         "next",
         "finish",
+        "more_fact",
     }:
         await q.answer()
         continent = parts[1]
         queue = DATA.countries(continent)
         random.shuffle(queue)
         session = TestSession(user_id=update.effective_user.id, queue=queue)
+        session.total_questions = len(queue)
         context.user_data["test_session"] = session
         await _next_question(update, context)
         return
@@ -165,29 +170,100 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.warning("Failed to clear test buttons: %s", e)
         if selected == current["answer"]:
             session.stats["correct"] += 1
-            text = "✅ Верно"
+            progress = (
+                "✅ Верно. (Правильных ответов: "
+                f"{session.stats['correct']} из {session.total_questions}. "
+                f"Осталось вопросов {len(session.queue)})"
+            )
+            try:
+                await context.bot.send_message(q.message.chat_id, progress)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send test feedback: %s", e)
+            fact = get_static_fact(current["country"])
+            text = current["country"]
             if current["type"] == "country_to_capital":
-                text += f"\n{current['country']}\nСтолица: {current['capital']}"
+                text += f"\nСтолица: {current['capital']}"
+            fact_msg = (
+                f"{text}\n\n{fact}\n\nНажми кнопку ниже, чтобы узнать еще один факт"
+            )
+            flag_path = get_flag_image_path(current["country"])
+            msg = None
+            if flag_path:
+                try:
+                    with flag_path.open("rb") as flag_file:
+                        msg = await context.bot.send_photo(
+                            q.message.chat_id,
+                            flag_file,
+                            caption=fact_msg,
+                            reply_markup=fact_more_kb(),
+                        )
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to send flag image: %s", e)
             else:
-                text += f"\n{current['country']}"
+                try:
+                    msg = await context.bot.send_message(
+                        q.message.chat_id,
+                        fact_msg,
+                        reply_markup=fact_more_kb(),
+                    )
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to send card feedback: %s", e)
+            if msg:
+                session.fact_message_id = msg.message_id
+                session.fact_subject = current["country"]
+                session.fact_text = fact
         else:
             session.unknown_set.add(current["country"])
             text = (
                 "❌ <b>Неверно</b>."
                 f"\n\nПравильный ответ:\n<b>{current['answer']}</b>"
             )
-        try:
-            await context.bot.send_message(q.message.chat_id, text, parse_mode="HTML")
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to send test feedback: %s", e)
+            try:
+                await context.bot.send_message(q.message.chat_id, text, parse_mode="HTML")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send test feedback: %s", e)
         await asyncio.sleep(2)
         await _next_question(update, context, replace_message=False)
         return
 
     action = parts[1]
+    if action == "more_fact":
+        await q.answer()
+        if session.fact_message_id != q.message.message_id:
+            return
+        extra = await generate_llm_fact(
+            session.fact_subject or "",
+            session.fact_text or "",
+        )
+        base = q.message.caption or q.message.text or ""
+        base = base.replace(
+            "\n\nНажми кнопку ниже, чтобы узнать еще один факт",
+            "",
+        )
+        try:
+            if q.message.photo:
+                await q.edit_message_caption(
+                    caption=f"{base}\n\nЕще один факт: {extra}",
+                    reply_markup=None,
+                )
+            else:
+                await q.edit_message_text(
+                    f"{base}\n\nЕще один факт: {extra}",
+                    reply_markup=None,
+                )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send extra fact: %s", e)
+        session.fact_message_id = None
+        return
     if action == "show":
         await q.answer()
-        session.unknown_set.add(current["country"])
+        item = (
+            current["country"]
+            if current["type"] == "country_to_capital"
+            else current["capital"]
+        )
+        session.unknown_set.add(item)
+        add_to_repeat(context.user_data, {item})
         try:
             await q.edit_message_text(
                 f"{current['prompt']}\n\n<b>Ответ: {current['answer']}</b>",
@@ -207,7 +283,13 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if action == "skip":
         await q.answer()
-        session.unknown_set.add(current["country"])
+        item = (
+            current["country"]
+            if current["type"] == "country_to_capital"
+            else current["capital"]
+        )
+        session.unknown_set.add(item)
+        add_to_repeat(context.user_data, {item})
         await _next_question(update, context)
         return
 

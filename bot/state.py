@@ -109,6 +109,10 @@ class TestSession:
     queue: List[str] = field(default_factory=list)
     unknown_set: Set[str] = field(default_factory=set)
     stats: Dict[str, int] = field(default_factory=lambda: {"total": 0, "correct": 0})
+    total_questions: int = 0
+    fact_message_id: int | None = None
+    fact_subject: str | None = None
+    fact_text: str | None = None
 
 
 @dataclass
