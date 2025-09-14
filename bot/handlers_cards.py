@@ -251,9 +251,17 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             session.unknown_set.add(item)
             add_to_repeat(context.user_data, {item})
-            await q.edit_message_text(
-                f"❌ Неверно.\nПравильный ответ:\n{current['answer']}"
-            )
+            try:
+                await q.edit_message_reply_markup(None)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to clear card buttons: %s", e)
+            try:
+                await context.bot.send_message(
+                    q.message.chat_id,
+                    f"❌ Неверно.\nПравильный ответ:\n{current['answer']}",
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send card feedback: %s", e)
         await asyncio.sleep(3)
         await _next_card(update, context, replace_message=False)
         return
