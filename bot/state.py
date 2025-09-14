@@ -104,6 +104,14 @@ class CardSession:
 
 
 @dataclass
+class TestSession:
+    user_id: int
+    queue: List[str] = field(default_factory=list)
+    unknown_set: Set[str] = field(default_factory=set)
+    stats: Dict[str, int] = field(default_factory=lambda: {"total": 0, "correct": 0})
+
+
+@dataclass
 class SprintSession:
     user_id: int
     duration_sec: int = 60
