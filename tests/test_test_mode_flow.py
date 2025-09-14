@@ -78,26 +78,16 @@ def test_full_test_flow(monkeypatch):
         q_show = SimpleNamespace(
             data="test:show",
             answer=AsyncMock(),
-            edit_message_text=AsyncMock(),
+            edit_message_reply_markup=AsyncMock(),
             message=q_start.message,
         )
         update.callback_query = q_show
         await cb_test(update, context)
-        q_show.edit_message_text.assert_awaited()
+        q_show.edit_message_reply_markup.assert_awaited()
         assert session.unknown_set
         assert get_user_stats(context.user_data).to_repeat
 
-        # --- next question and answer correctly ---
-        q_next = SimpleNamespace(
-            data="test:next",
-            answer=AsyncMock(),
-            edit_message_text=AsyncMock(),
-            message=q_start.message,
-        )
-        update.callback_query = q_next
-        await cb_test(update, context)
-        q_next.edit_message_text.assert_awaited()
-
+        # after "Показать ответ" следующий вопрос отправляется автоматически
         current = context.user_data["test_session"].current
         idx = current["options"].index(current["answer"])
         q_ans = SimpleNamespace(
@@ -109,13 +99,13 @@ def test_full_test_flow(monkeypatch):
         update.callback_query = q_ans
         await cb_test(update, context)
         assert context.user_data["test_session"].stats["correct"] >= 1
-        progress = bot.sent[0][1]
+        caption = bot.sent[-2][1]
         expected = (
             "✅ Верно. (Правильных ответов: "
             f"{session.stats['correct']} из {session.total_questions}. "
             f"Осталось вопросов {len(session.queue) + 1})"
         )
-        assert progress == expected
+        assert caption.split("\n\n", 1)[0] == expected
 
         # --- finish session ---
         q_finish = SimpleNamespace(
@@ -145,18 +135,21 @@ def test_show_answer_marks_unknown(monkeypatch):
             "prompt": "Канада?",
             "answer": "Оттава",
         }
-        context = SimpleNamespace(user_data={"test_session": session})
+        bot = DummyBot()
+        context = SimpleNamespace(user_data={"test_session": session}, bot=bot)
         q = SimpleNamespace(
             data="test:show",
             answer=AsyncMock(),
-            edit_message_text=AsyncMock(),
+            edit_message_reply_markup=AsyncMock(),
             message=SimpleNamespace(chat_id=1),
         )
-        update = SimpleNamespace(callback_query=q)
+        update = SimpleNamespace(callback_query=q, effective_chat=SimpleNamespace(id=1))
+        monkeypatch.setattr(ht, "_next_question", AsyncMock())
         await cb_test(update, context)
         assert "Канада" in session.unknown_set
         assert "Канада" in get_user_stats(context.user_data).to_repeat
-        q.edit_message_text.assert_awaited()
+        q.edit_message_reply_markup.assert_awaited()
+        ht._next_question.assert_awaited_once()
     asyncio.run(run())
 
 
