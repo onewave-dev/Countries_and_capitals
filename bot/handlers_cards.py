@@ -112,7 +112,16 @@ async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         f"знаю: {session.stats['known']}."
     )
     reply_markup = cards_finish_kb()
-    if session.unknown_set:
+    if session.stats["known"] < session.stats["shown"]:
+        if hasattr(session, "current"):
+            item = (
+                session.current["country"]
+                if session.current["type"] == "country_to_capital"
+                else session.current["capital"]
+            )
+            if item not in session.unknown_set:
+                session.unknown_set.add(item)
+                add_to_repeat(context.user_data, {item})
         unknown_lines = []
         for item in sorted(session.unknown_set):
             if item in DATA.capital_by_country:
