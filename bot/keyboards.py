@@ -130,14 +130,19 @@ def sprint_start_kb(continent: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def cards_kb(options: list[str]) -> InlineKeyboardMarkup:
-    """Keyboard for flash-card questions with answer options."""
+def cards_kb(options: list[str], prefix: str = "cards") -> InlineKeyboardMarkup:
+    """Keyboard for flash-card questions with answer options.
+
+    ``prefix`` determines the callback namespace.  By default the regular
+    ``cards`` prefix is used, but alternative prefixes (e.g. ``test``) can be
+    supplied for other handlers.
+    """
 
     rows: list[list[InlineKeyboardButton]] = []
     buffer: list[InlineKeyboardButton] = []
     for i, opt in enumerate(options):
         text = shorten(opt, width=40, placeholder="")
-        btn = InlineKeyboardButton(text, callback_data=f"cards:opt:{i}")
+        btn = InlineKeyboardButton(text, callback_data=f"{prefix}:opt:{i}")
         if len(text) > LONG_OPTION:
             if buffer:
                 rows.append(buffer)
@@ -152,18 +157,21 @@ def cards_kb(options: list[str]) -> InlineKeyboardMarkup:
         rows.append(buffer)
     # spacer row to visually separate options from action buttons
 
-    rows.append([InlineKeyboardButton(SPACER, callback_data="cards:void")])
-    rows.append([InlineKeyboardButton("Показать ответ", callback_data="cards:show")])
-    rows.append([InlineKeyboardButton("Пропустить", callback_data="cards:skip")])
-    rows.append([InlineKeyboardButton("Завершить", callback_data="cards:finish")])
+    rows.append([InlineKeyboardButton(SPACER, callback_data=f"{prefix}:void")])
+    rows.append([InlineKeyboardButton("Показать ответ", callback_data=f"{prefix}:show")])
+    rows.append([InlineKeyboardButton("Пропустить", callback_data=f"{prefix}:skip")])
+    rows.append([InlineKeyboardButton("Завершить", callback_data=f"{prefix}:finish")])
     return InlineKeyboardMarkup(rows)
 
 
-def cards_answer_kb() -> InlineKeyboardMarkup:
-    """Keyboard shown after revealing the answer."""
+def cards_answer_kb(prefix: str = "cards") -> InlineKeyboardMarkup:
+    """Keyboard shown after revealing the answer.
+
+    ``prefix`` allows reuse of this keyboard in different callback namespaces.
+    """
     rows = [
-        [InlineKeyboardButton("Продолжить", callback_data="cards:next")],
-        [InlineKeyboardButton("Завершить", callback_data="cards:finish")],
+        [InlineKeyboardButton("Продолжить", callback_data=f"{prefix}:next")],
+        [InlineKeyboardButton("Завершить", callback_data=f"{prefix}:finish")],
     ]
     return InlineKeyboardMarkup(rows)
 
