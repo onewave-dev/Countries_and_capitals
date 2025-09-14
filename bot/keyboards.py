@@ -1,7 +1,12 @@
 """Inline keyboards used across the bot menus."""
 
 from textwrap import shorten
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 # Text longer than this will be placed on its own row instead of pairing.
 LONG_OPTION = 15
@@ -206,6 +211,16 @@ def coop_join_kb(session_id: str) -> InlineKeyboardMarkup:
 
     rows = [[InlineKeyboardButton("🙋 Участвовать", callback_data=f"coop:join:{session_id}")]]
     return InlineKeyboardMarkup(rows)
+
+
+def coop_invite_kb() -> ReplyKeyboardMarkup:
+    """Keyboard for inviting the second player."""
+
+    rows = [
+        [KeyboardButton("Пригласить из контактов", request_contact=True)],
+        [KeyboardButton("Создать ссылку")],
+    ]
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=True)
 
 
 def coop_rounds_kb(session_id: str, player_id: int) -> InlineKeyboardMarkup:

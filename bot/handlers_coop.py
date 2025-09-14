@@ -8,7 +8,7 @@ import uuid
 import logging
 from typing import Dict, Tuple
 
-from telegram import Update
+from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from httpx import HTTPError
@@ -16,7 +16,7 @@ from httpx import HTTPError
 from app import DATA
 from .state import CoopSession
 from .questions import pick_question
-from .keyboards import coop_answer_kb, coop_continent_kb
+from .keyboards import coop_answer_kb, coop_continent_kb, coop_invite_kb
 
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -132,13 +132,12 @@ async def cmd_coop_capitals(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     session.players.append(update.effective_user.id)
     session.player_chats[update.effective_user.id] = update.effective_chat.id
     sessions[session_id] = session
+    context.user_data["coop_pending"] = {"session_id": session_id, "stage": "name"}
 
     try:
-        await update.message.reply_text(
-            "Матч создан. Передайте другу команду:\n" f"/coop_join {session_id}"
-        )
+        await update.message.reply_text("Матч создан. Как вас зовут?")
     except (TelegramError, HTTPError) as e:
-        logger.warning("Failed to send coop invite code: %s", e)
+        logger.warning("Failed to request player name: %s", e)
 
 
 async def cmd_coop_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -174,26 +173,12 @@ async def cmd_coop_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     session.players.append(user_id)
     session.player_chats[user_id] = update.effective_chat.id
+    context.user_data["coop_pending"] = {"session_id": session_id, "stage": "name"}
 
-    # Prompt both players to choose a continent before starting the match
     try:
-        await update.message.reply_text(
-            "Вы присоединились. Выберите континент.",
-            reply_markup=coop_continent_kb(session_id),
-        )
+        await update.message.reply_text("Введите ваше имя")
     except (TelegramError, HTTPError) as e:
-        logger.warning("Failed to send continent keyboard to second player: %s", e)
-
-    first_player = session.players[0]
-    first_chat = session.player_chats[first_player]
-    try:
-        await context.bot.send_message(
-            first_chat,
-            "Второй игрок присоединился. Выберите континент.",
-            reply_markup=coop_continent_kb(session_id),
-        )
-    except (TelegramError, HTTPError) as e:
-        logger.warning("Failed to send continent keyboard to first player: %s", e)
+        logger.warning("Failed to request second player name: %s", e)
 
 
 async def cmd_coop_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -236,6 +221,92 @@ async def cmd_coop_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     session.current_round = 1
     await _start_round(context, session)
+
+
+async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle cooperative mode messages awaiting user input."""
+
+    pending = context.user_data.get("coop_pending")
+    if not pending:
+        return
+
+    session_id = pending.get("session_id")
+    stage = pending.get("stage")
+    sessions = _get_sessions(context)
+    session = sessions.get(session_id)
+    if not session:
+        context.user_data.pop("coop_pending", None)
+        return
+
+    user_id = update.effective_user.id
+
+    if stage == "name":
+        if not update.message or not update.message.text:
+            await update.message.reply_text("Пожалуйста, отправьте имя текстом")
+            return
+        session.player_names[user_id] = update.message.text.strip()
+        if len(session.players) == 1:
+            pending["stage"] = "invite"
+            try:
+                await update.message.reply_text(
+                    "Имя сохранено. Пригласите второго игрока.",
+                    reply_markup=coop_invite_kb(),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send invite keyboard: %s", e)
+        else:
+            context.user_data.pop("coop_pending", None)
+            try:
+                await update.message.reply_text(
+                    "Имя сохранено. Выберите континент.",
+                    reply_markup=coop_continent_kb(session_id),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning(
+                    "Failed to send continent keyboard to second player: %s", e
+                )
+            first_player = session.players[0]
+            first_chat = session.player_chats[first_player]
+            try:
+                await context.bot.send_message(
+                    first_chat,
+                    "Второй игрок присоединился. Выберите континент.",
+                    reply_markup=coop_continent_kb(session_id),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning(
+                    "Failed to send continent keyboard to first player: %s", e
+                )
+        return
+
+    if stage == "invite":
+        link = f"https://t.me/{context.bot.username}?start=coop_{session_id}"
+        if update.message and update.message.contact:
+            contact = update.message.contact
+            if contact.user_id:
+                try:
+                    await context.bot.send_message(
+                        contact.user_id,
+                        f"{session.player_names.get(user_id, 'Игрок')} приглашает вас сыграть в дуэт против бота.\n{link}",
+                    )
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to send invite to contact: %s", e)
+            try:
+                await update.message.reply_text(
+                    "Приглашение отправлено",
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to confirm invite: %s", e)
+        else:
+            try:
+                await update.message.reply_text(
+                    f"Поделитесь ссылкой: {link}",
+                    reply_markup=ReplyKeyboardRemove(),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send invite link: %s", e)
+        context.user_data.pop("coop_pending", None)
 
 
 # ===== Callback handler =====

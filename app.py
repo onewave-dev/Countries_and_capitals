@@ -9,8 +9,13 @@ from dotenv import load_dotenv
 
 from telegram import Update
 from telegram.ext import (
-    Application, ApplicationBuilder, ContextTypes,
-    CommandHandler, CallbackQueryHandler
+    Application,
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
 )
 
 from bot.utils import tg_call
@@ -68,6 +73,7 @@ from bot.handlers_coop import (
     cmd_coop_join,
     cmd_coop_cancel,
     cmd_coop_test,
+    msg_coop,
 )
 from bot.handlers_stats import cmd_stats
 
@@ -83,6 +89,9 @@ application.add_handler(CommandHandler("coop_join", cmd_coop_join))
 application.add_handler(CommandHandler("coop_cancel", cmd_coop_cancel))
 application.add_handler(CommandHandler("coop_test", cmd_coop_test))
 application.add_handler(CommandHandler("stats", cmd_stats))
+application.add_handler(
+    MessageHandler((filters.TEXT & ~filters.COMMAND) | filters.CONTACT, msg_coop)
+)
 
 
 async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
