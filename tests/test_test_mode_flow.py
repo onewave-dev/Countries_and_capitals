@@ -175,6 +175,57 @@ def test_skip_marks_unknown(monkeypatch):
     asyncio.run(run())
 
 
+def test_capital_question_show_and_skip_mark_country(monkeypatch):
+    async def run():
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+
+        def make_session() -> TestSession:
+            session = TestSession(user_id=1, queue=[])
+            session.current = {
+                "country": "Израиль",
+                "capital": "Иерусалим",
+                "type": "capital_to_country",
+                "prompt": "Иерусалим?",
+                "answer": "Израиль",
+                "options": [],
+            }
+            return session
+
+        bot = DummyBot()
+        update = SimpleNamespace(effective_chat=SimpleNamespace(id=1))
+
+        # --- show answer ---
+        session = make_session()
+        context = SimpleNamespace(user_data={"test_session": session}, bot=bot)
+        q_show = SimpleNamespace(
+            data="test:show",
+            answer=AsyncMock(),
+            edit_message_reply_markup=AsyncMock(),
+            message=SimpleNamespace(chat_id=1),
+        )
+        update.callback_query = q_show
+        monkeypatch.setattr(ht, "_next_question", AsyncMock())
+        await cb_test(update, context)
+        assert "Израиль" in session.unknown_set
+        assert "Израиль" in get_user_stats(context.user_data).to_repeat
+
+        # --- skip question ---
+        session = make_session()
+        context.user_data = {"test_session": session}
+        q_skip = SimpleNamespace(
+            data="test:skip",
+            answer=AsyncMock(),
+            message=SimpleNamespace(chat_id=1),
+        )
+        update.callback_query = q_skip
+        monkeypatch.setattr(ht, "_next_question", AsyncMock())
+        await cb_test(update, context)
+        assert "Израиль" in session.unknown_set
+        assert "Израиль" in get_user_stats(context.user_data).to_repeat
+
+    asyncio.run(run())
+
+
 def test_more_fact(monkeypatch):
     async def run():
         session = TestSession(user_id=1, queue=[])

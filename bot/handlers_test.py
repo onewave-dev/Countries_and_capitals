@@ -253,11 +253,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if action == "show":
         await q.answer()
-        item = (
-            current["country"]
-            if current["type"] == "country_to_capital"
-            else current["capital"]
-        )
+        item = current["country"]
         session.unknown_set.add(item)
         add_to_repeat(context.user_data, {item})
         try:
@@ -308,11 +304,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if action == "skip":
         await q.answer()
-        item = (
-            current["country"]
-            if current["type"] == "country_to_capital"
-            else current["capital"]
-        )
+        item = current["country"]
         session.unknown_set.add(item)
         add_to_repeat(context.user_data, {item})
         await _next_question(update, context)
