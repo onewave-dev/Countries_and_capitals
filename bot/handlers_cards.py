@@ -6,7 +6,7 @@ import asyncio
 from typing import Optional
 
 from telegram import Update
-from telegram.error import BadRequest, TelegramError
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 from httpx import HTTPError
 
@@ -18,7 +18,6 @@ from .keyboards import (
     cards_repeat_kb,
     cards_finish_kb,
     main_menu_kb,
-    cards_answer_kb,
     fact_more_kb,
 )
 from .flags import get_country_flag, get_flag_image_path
@@ -319,27 +318,52 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if action == "show":
         await q.answer()
-        item = current["country"] if current["type"] == "country_to_capital" else current["capital"]
+        item = (
+            current["country"]
+            if current["type"] == "country_to_capital"
+            else current["capital"]
+        )
         session.unknown_set.add(item)
         add_to_repeat(context.user_data, {item})
-        prompt_plain = current["prompt"].replace("<b>", "").replace("</b>", "")
-        target_text_plain = f"{prompt_plain}\n\nОтвет: {current['answer']}"
-        if q.message.text == target_text_plain:
-            logger.debug("Skipping edit for user %s: answer already shown", session.user_id)
-            return
         try:
-            await q.edit_message_text(
-                f"{current['prompt']}\n\n<b>Ответ: {current['answer']}</b>",
-                parse_mode="HTML",
-                reply_markup=cards_answer_kb(),
-            )
-        except BadRequest:
-            logger.debug(
-                "Ignoring BadRequest for duplicate edit for user %s", session.user_id
-            )
+            await q.edit_message_reply_markup(None)
         except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to show answer: %s", e)
-            return
+            logger.warning("Failed to clear card buttons: %s", e)
+        text = current["country"]
+        if current["type"] == "country_to_capital":
+            text += f"\nСтолица: {current['capital']}"
+        fact = get_static_fact(current["country"])
+        fact_msg = (
+            f"{text}\n\n{fact}\n\nНажми кнопку ниже, чтобы узнать еще один факт"
+        )
+        flag_path = get_flag_image_path(current["country"])
+        msg = None
+        if flag_path:
+            try:
+                with flag_path.open("rb") as flag_file:
+                    msg = await context.bot.send_photo(
+                        q.message.chat_id,
+                        flag_file,
+                        caption=fact_msg,
+                        reply_markup=fact_more_kb(),
+                    )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send flag image: %s", e)
+        else:
+            try:
+                msg = await context.bot.send_message(
+                    q.message.chat_id,
+                    fact_msg,
+                    reply_markup=fact_more_kb(),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send card feedback: %s", e)
+        if msg:
+            session.fact_message_id = msg.message_id
+            session.fact_subject = current["country"]
+            session.fact_text = fact
+        await asyncio.sleep(3)
+        await _next_card(update, context, replace_message=False)
         return
 
     if action == "next":
