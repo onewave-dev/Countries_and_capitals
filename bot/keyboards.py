@@ -40,17 +40,32 @@ CONTINENTS = [
 ]
 
 
-def continent_kb(prefix: str, include_menu: bool = False) -> InlineKeyboardMarkup:
+def continent_kb(
+    prefix: str, include_menu: bool = False, include_world: bool = True
+) -> InlineKeyboardMarkup:
     """Keyboard for choosing a continent.
 
     ``prefix`` should be ``menu:cards`` or ``menu:sprint`` so that callback data
     stays within the ``^menu:`` namespace while the user makes selections.
-    ``include_menu`` optionally appends a button back to the main menu.
+    ``include_menu`` optionally appends a button back to the main menu. Set
+    ``include_world`` to ``False`` to hide the "Весь мир" option.
     """
 
-    rows = [[InlineKeyboardButton(c, callback_data=f"{prefix}:{c}")] for c in CONTINENTS]
+    continents = CONTINENTS if include_world else [c for c in CONTINENTS if c != "Весь мир"]
+    rows = [[InlineKeyboardButton(c, callback_data=f"{prefix}:{c}")] for c in continents]
     if include_menu:
         rows.append([InlineKeyboardButton("В меню", callback_data="menu:main")])
+    return InlineKeyboardMarkup(rows)
+
+
+def test_start_kb() -> InlineKeyboardMarkup:
+    """Keyboard for starting the test mode."""
+
+    rows = [
+        [InlineKeyboardButton("Тестировать континент", callback_data="test:continent")],
+        [InlineKeyboardButton("Тестировать 30 случайных", callback_data="test:random30")],
+        [InlineKeyboardButton("В меню", callback_data="menu:main")],
+    ]
     return InlineKeyboardMarkup(rows)
 
 

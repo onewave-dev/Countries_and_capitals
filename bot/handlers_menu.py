@@ -13,6 +13,7 @@ from .keyboards import (
     sprint_start_kb,
     list_result_kb,
     back_to_menu_kb,
+    test_start_kb,
 )
 from .flags import get_country_flag
 
@@ -43,14 +44,12 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "menu:void":
         return
 
-    if data in {"menu:cards", "menu:sprint", "menu:list", "menu:test"}:
+    if data in {"menu:cards", "menu:sprint", "menu:list"}:
         mode = data.split(":")[1]
         if mode == "cards":
             text = "📘 Флэш-карточки: выбери континент."
         elif mode == "sprint":
             text = "⏱ Игра на время: выбери континент."
-        elif mode == "test":
-            text = "📝 Тест: выбери континент."
         else:
             text = "📋 Учить по спискам: выбери континент."
         await q.edit_message_text(
@@ -58,6 +57,10 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=continent_kb(
                 f"menu:{mode}", include_menu=(mode == "list")
             ),
+        )
+    elif data == "menu:test":
+        await q.edit_message_text(
+            "📝 Тест: выбери режим.", reply_markup=test_start_kb()
         )
 
     elif data.startswith("menu:cards:"):

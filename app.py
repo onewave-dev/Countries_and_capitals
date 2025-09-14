@@ -67,6 +67,7 @@ DATA = load_data()
 from bot.handlers_menu import cmd_start, cb_menu
 from bot.handlers_cards import cb_cards
 from bot.handlers_sprint import cb_sprint
+from bot.handlers_test import cb_test
 from bot.handlers_coop import (
     cb_coop,
     cmd_coop_capitals,
@@ -83,6 +84,7 @@ application.add_handler(CommandHandler("start", cmd_start))
 application.add_handler(CallbackQueryHandler(cb_menu, pattern="^menu:"))
 application.add_handler(CallbackQueryHandler(cb_cards, pattern="^cards:"))
 application.add_handler(CallbackQueryHandler(cb_sprint, pattern="^sprint:"))
+application.add_handler(CallbackQueryHandler(cb_test, pattern="^test:"))
 application.add_handler(CallbackQueryHandler(cb_coop, pattern="^coop:"))
 application.add_handler(CommandHandler("coop_capitals", cmd_coop_capitals))
 application.add_handler(CommandHandler("coop_join", cmd_coop_join))
