@@ -22,6 +22,7 @@ from .keyboards import (
     coop_rounds_kb,
     coop_difficulty_kb,
 )
+from .flags import get_flag_image_path
 
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -127,13 +128,27 @@ async def _bot_move(context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Игрок 2 → {session.answer_options.get(session.players[1], '-') } {'✅' if session.answers.get(session.players[1]) else '❌'}\n"
         f"Бот-соперник → {'✅' if bot_correct else '❌'}\n"
         f"Правильный ответ: <b>{correct_display}</b>\n"
+    )
+    if session.current_question["type"] == "country_to_capital":
+        result_text += f"Столица: {session.current_question['capital']}\n"
+    result_text += (
         f"Счёт: Команда {session.team_score} — Бот {session.bot_score} (Раунд {session.current_round}/{session.total_rounds})"
     )
 
+    flag_path = get_flag_image_path(session.current_question["country"])
     for pid in session.players:
         chat_id = session.player_chats[pid]
         try:
-            await context.bot.send_message(chat_id, result_text, parse_mode="HTML")
+            if flag_path:
+                with flag_path.open("rb") as f:
+                    await context.bot.send_photo(
+                        chat_id,
+                        f,
+                        caption=result_text,
+                        parse_mode="HTML",
+                    )
+            else:
+                await context.bot.send_message(chat_id, result_text, parse_mode="HTML")
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send coop round result: %s", e)
 
@@ -142,13 +157,15 @@ async def _bot_move(context: ContextTypes.DEFAULT_TYPE) -> None:
         await _finish_match(context, session.session_id)
         return
 
+    delay = random.uniform(2, 3)
     job = context.application.job_queue.run_once(
         _run_next_round,
-        1,
+        delay,
         data={"session_id": session.session_id},
         name=f"coop_next_round_{session.session_id}",
     )
     session.jobs["next_round"] = job
+    logger.debug("Next coop round in %.1f s", delay)
 
 
 async def _finish_match(context: ContextTypes.DEFAULT_TYPE, session_id: str) -> None:
