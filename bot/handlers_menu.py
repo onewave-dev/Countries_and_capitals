@@ -22,6 +22,14 @@ WELCOME = (
 )
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args and context.args[0].startswith("coop_"):
+        from .handlers_coop import cmd_coop_join
+
+        session_id = context.args[0][5:]
+        context.args = [session_id]
+        await cmd_coop_join(update, context)
+        return
+
     chat_id = update.effective_chat.id
     await context.bot.send_message(chat_id, WELCOME, reply_markup=main_menu_kb())
 

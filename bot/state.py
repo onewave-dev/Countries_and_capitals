@@ -119,6 +119,7 @@ class CoopSession:
     session_id: str
     players: List[int] = field(default_factory=list)
     player_chats: Dict[int, int] = field(default_factory=dict)
+    player_names: Dict[int, str] = field(default_factory=dict)
     continent_filter: str | None = None
     mode: str = "mixed"
     difficulty: str = "easy"
