@@ -115,17 +115,19 @@ class SprintSession:
 @dataclass
 class CoopSession:
     session_id: str
-    chat_id: int
     players: List[int] = field(default_factory=list)
+    player_chats: Dict[int, int] = field(default_factory=dict)
     continent_filter: str | None = None
     mode: str = "mixed"
     difficulty: str = "easy"
-    total_rounds: int = 10
+    total_rounds: int = 5
     current_round: int = 0
-    turn: int = 0
     team_score: int = 0
     bot_score: int = 0
-    jobs: Dict[str, Any] = field(default_factory=dict)
+    answers: Dict[int, bool] = field(default_factory=dict)
+    answer_options: Dict[int, str] = field(default_factory=dict)
+    question_message_ids: Dict[int, int] = field(default_factory=dict)
+    current_question: Dict[str, Any] | None = None
 
 
 @dataclass
