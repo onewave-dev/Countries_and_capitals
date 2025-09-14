@@ -129,10 +129,15 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id, chunks[-1], reply_markup=list_result_kb())
 
     elif data == "menu:coop":
-        await q.edit_message_text(
-            "🤝 Дуэт против Бота: запускай в групповом чате командой /coop_capitals",
-            reply_markup=back_to_menu_kb(),
-        )
+        from telegram import Update
+        from .handlers_coop import cmd_coop_capitals
+
+        fake_update = Update(update.update_id, message=q.message)
+        await cmd_coop_capitals(fake_update, context)
+        try:
+            await q.message.delete()
+        except Exception:
+            pass
 
     elif data == "menu:main":
         await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
