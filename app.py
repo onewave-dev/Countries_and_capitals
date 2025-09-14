@@ -77,6 +77,7 @@ from bot.handlers_coop import (
     msg_coop,
 )
 from bot.handlers_stats import cmd_stats
+from bot.handlers_quit import cmd_quit
 
 
 # Register handlers
@@ -91,6 +92,7 @@ application.add_handler(CommandHandler("coop_join", cmd_coop_join))
 application.add_handler(CommandHandler("coop_cancel", cmd_coop_cancel))
 application.add_handler(CommandHandler("coop_test", cmd_coop_test))
 application.add_handler(CommandHandler("stats", cmd_stats))
+application.add_handler(CommandHandler(["quit", "exit"], cmd_quit))
 application.add_handler(
     MessageHandler((filters.TEXT & ~filters.COMMAND) | filters.CONTACT, msg_coop)
 )
