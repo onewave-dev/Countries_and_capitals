@@ -223,6 +223,16 @@ def coop_difficulty_kb(session_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def coop_continent_kb(session_id: str) -> InlineKeyboardMarkup:
+    """Keyboard to select continent for cooperative mode."""
+
+    rows = [
+        [InlineKeyboardButton(c, callback_data=f"coop:cont:{session_id}:{c}")]
+        for c in CONTINENTS
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 def coop_answer_kb(session_id: str, player_id: int, options: list[str]) -> InlineKeyboardMarkup:
     """Keyboard with four answer options bound to a player."""
 

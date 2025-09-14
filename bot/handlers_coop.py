@@ -17,7 +17,7 @@ from httpx import HTTPError
 from app import DATA
 from .state import CoopSession
 from .questions import pick_question
-from .keyboards import coop_answer_kb
+from .keyboards import coop_answer_kb, coop_continent_kb
 
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -46,6 +46,7 @@ def _find_user_session(
 async def _start_round(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
     """Generate question and send it to both players."""
 
+    # Use continent filter chosen by players when generating questions
     question = pick_question(DATA, session.continent_filter, session.mode)
     session.current_question = question
     session.answers.clear()
@@ -159,16 +160,25 @@ async def cmd_coop_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     session.players.append(user_id)
     session.player_chats[user_id] = update.effective_chat.id
 
-    await update.message.reply_text("Вы присоединились. Матч начинается!")
-    other = session.players[0]
-    other_chat = session.player_chats[other]
+    # Prompt both players to choose a continent before starting the match
     try:
-        await context.bot.send_message(other_chat, "Второй игрок присоединился. Матч начинается!")
+        await update.message.reply_text(
+            "Вы присоединились. Выберите континент.",
+            reply_markup=coop_continent_kb(session_id),
+        )
     except (TelegramError, HTTPError) as e:
-        logger.warning("Failed to notify first player: %s", e)
+        logger.warning("Failed to send continent keyboard to second player: %s", e)
 
-    session.current_round = 1
-    await _start_round(context, session)
+    first_player = session.players[0]
+    first_chat = session.player_chats[first_player]
+    try:
+        await context.bot.send_message(
+            first_chat,
+            "Второй игрок присоединился. Выберите континент.",
+            reply_markup=coop_continent_kb(session_id),
+        )
+    except (TelegramError, HTTPError) as e:
+        logger.warning("Failed to send continent keyboard to first player: %s", e)
 
 
 async def cmd_coop_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -223,6 +233,26 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     action = parts[1]
 
     sessions = _get_sessions(context)
+
+    if action == "cont":
+        session_id = parts[2]
+        continent = parts[3]
+        session = sessions.get(session_id)
+        if not session or update.effective_user.id not in session.players:
+            await q.answer()
+            return
+        if session.continent_filter is not None:
+            await q.answer("Континент уже выбран", show_alert=True)
+            return
+        session.continent_filter = None if continent == "Весь мир" else continent
+        await q.answer()
+        try:
+            await q.edit_message_reply_markup(None)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to clear continent keyboard: %s", e)
+        session.current_round = 1
+        await _start_round(context, session)
+        return
 
     if action != "ans":
         await q.answer()
