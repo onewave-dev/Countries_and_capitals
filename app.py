@@ -62,7 +62,13 @@ DATA = load_data()
 from bot.handlers_menu import cmd_start, cb_menu
 from bot.handlers_cards import cb_cards
 from bot.handlers_sprint import cb_sprint
-from bot.handlers_coop import cb_coop, cmd_coop_capitals, cmd_coop_test
+from bot.handlers_coop import (
+    cb_coop,
+    cmd_coop_capitals,
+    cmd_coop_join,
+    cmd_coop_cancel,
+    cmd_coop_test,
+)
 from bot.handlers_stats import cmd_stats
 
 
@@ -73,6 +79,8 @@ application.add_handler(CallbackQueryHandler(cb_cards, pattern="^cards:"))
 application.add_handler(CallbackQueryHandler(cb_sprint, pattern="^sprint:"))
 application.add_handler(CallbackQueryHandler(cb_coop, pattern="^coop:"))
 application.add_handler(CommandHandler("coop_capitals", cmd_coop_capitals))
+application.add_handler(CommandHandler("coop_join", cmd_coop_join))
+application.add_handler(CommandHandler("coop_cancel", cmd_coop_cancel))
 application.add_handler(CommandHandler("coop_test", cmd_coop_test))
 application.add_handler(CommandHandler("stats", cmd_stats))
 
