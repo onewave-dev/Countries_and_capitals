@@ -45,6 +45,7 @@ async def _next_card(
         the next question. When ``False``, the next question is sent as a new
         message instead of editing the existing one. This is used after sending
         feedback on a user's answer so that the feedback message is preserved.
+        The final card in the queue is always sent as a new message.
     """
 
     session: CardSession = context.user_data["card_session"]
@@ -52,6 +53,7 @@ async def _next_card(
         await _finish_session(update, context)
         return
 
+    is_last = len(session.queue) == 1
     item = session.queue.pop(0)
     question = make_card_question(
         DATA, item, session.mode, session.continent_filter
@@ -66,7 +68,7 @@ async def _next_card(
         question["answer"],
     )
 
-    if update.callback_query and replace_message:
+    if update.callback_query and replace_message and not is_last:
         q = update.callback_query
         try:
             await q.edit_message_text(
@@ -127,19 +129,12 @@ async def _finish_session(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     else:
         context.user_data.pop("card_session", None)
 
-    if update.callback_query:
-        q = update.callback_query
-        try:
-            await q.edit_message_text(text, reply_markup=reply_markup)
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to send session results: %s", e)
-            return
-    else:
-        try:
-            await update.effective_message.reply_text(text, reply_markup=reply_markup)
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to send session results: %s", e)
-            return
+    chat_id = update.effective_chat.id
+    try:
+        await context.bot.send_message(chat_id, text, reply_markup=reply_markup)
+    except (TelegramError, HTTPError) as e:
+        logger.warning("Failed to send session results: %s", e)
+        return
 
 
 async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
