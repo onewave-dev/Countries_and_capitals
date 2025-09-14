@@ -205,9 +205,13 @@ def test_capital_question_show_and_skip_mark_country(monkeypatch):
         )
         update.callback_query = q_show
         monkeypatch.setattr(ht, "_next_question", AsyncMock())
+        monkeypatch.setattr(ht, "get_flag_image_path", lambda c: None)
         await cb_test(update, context)
         assert "Израиль" in session.unknown_set
         assert "Израиль" in get_user_stats(context.user_data).to_repeat
+        assert any(
+            "Столица: Иерусалим" in (m[1] or "") for m in bot.sent
+        ), "Capital line missing in response"
 
         # --- skip question ---
         session = make_session()
