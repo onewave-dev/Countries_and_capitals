@@ -40,14 +40,19 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data = q.data
 
-    if data in {"menu:cards", "menu:sprint", "menu:list"}:
+    if data == "menu:void":
+        return
+
+    if data in {"menu:cards", "menu:sprint", "menu:list", "menu:test"}:
         mode = data.split(":")[1]
         if mode == "cards":
             text = "📘 Флэш-карточки: выбери континент."
         elif mode == "sprint":
             text = "⏱ Игра на время: выбери континент."
+        elif mode == "test":
+            text = "📝 Тест: выбери континент."
         else:
-            text = "📋 Учить по списку: выбери континент."
+            text = "📋 Учить по спискам: выбери континент."
         await q.edit_message_text(
             text,
             reply_markup=continent_kb(
