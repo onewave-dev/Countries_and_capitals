@@ -129,6 +129,8 @@ class CoopSession:
     answers: Dict[int, bool] = field(default_factory=dict)
     answer_options: Dict[int, str] = field(default_factory=dict)
     question_message_ids: Dict[int, int] = field(default_factory=dict)
+    rounds_message_ids: Dict[int, int] = field(default_factory=dict)
+    difficulty_message_ids: Dict[int, int] = field(default_factory=dict)
     current_question: Dict[str, Any] | None = None
     jobs: Dict[str, Job] = field(default_factory=dict)
 
