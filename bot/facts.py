@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 from pathlib import Path
 import logging
@@ -21,6 +22,8 @@ try:  # Gracefully handle missing API key during tests
     _client: AsyncOpenAI | None = AsyncOpenAI()
 except Exception:  # noqa: BLE001
     _client = None
+
+_llm_model = os.getenv("OPENAI_LLM_MODEL", "gpt-3.5-turbo")
 
 
 def get_static_fact(country: str) -> str:
@@ -47,7 +50,7 @@ async def generate_llm_fact(country: str, exclude: str) -> str:
         return "Факт недоступен"
     try:
         resp = await _client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=_llm_model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=80,
         )
