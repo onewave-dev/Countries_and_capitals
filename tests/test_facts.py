@@ -60,7 +60,7 @@ def test_cards_more_fact(monkeypatch):
         await cb_cards(update, context)
 
         q.edit_message_text.assert_awaited_once_with(
-            "Интересный факт: old\nЕще один факт: new", reply_markup=None
+            "Интересный факт: old\n\nЕще один факт: new", reply_markup=None
         )
         assert session.fact_message_id is None
 
