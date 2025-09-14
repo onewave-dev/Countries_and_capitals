@@ -231,9 +231,10 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 get_user_stats(context.user_data).to_repeat.discard(item)
                 session.stats["known"] += 1
             fact = get_static_fact(current["country"])
-            text = f"✅ Верно\n{current['country']}"
-            if current["type"] == "country_to_capital":
-                text += f"\nСтолица: {current['capital']}"
+            text = (
+                f"✅ Верно\n{current['country']}"
+                f"\nСтолица: {current['capital']}"
+            )
             fact_msg = (
                 f"{text}\n\n{fact}\n\nНажми кнопку ниже, чтобы узнать еще один факт"
             )
@@ -329,9 +330,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await q.edit_message_reply_markup(None)
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to clear card buttons: %s", e)
-        text = current["country"]
-        if current["type"] == "country_to_capital":
-            text += f"\nСтолица: {current['capital']}"
+        text = f"{current['country']}\nСтолица: {current['capital']}"
         fact = get_static_fact(current["country"])
         fact_msg = (
             f"{text}\n\n{fact}\n\nНажми кнопку ниже, чтобы узнать еще один факт"

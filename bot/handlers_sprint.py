@@ -195,9 +195,10 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if option == session.current["correct"]:
             session.score += 1
             await q.answer()
-            text = f"✅ Верно\n{session.current['country']}"
-            if session.current["type"] == "country_to_capital":
-                text += f"\nСтолица: {session.current['capital']}"
+            text = (
+                f"✅ Верно\n{session.current['country']}"
+                f"\nСтолица: {session.current['capital']}"
+            )
             flag_path = get_flag_image_path(session.current["country"])
             try:
                 await q.edit_message_reply_markup(None)

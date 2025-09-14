@@ -128,9 +128,8 @@ async def _bot_move(context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Игрок 2 → {session.answer_options.get(session.players[1], '-') } {'✅' if session.answers.get(session.players[1]) else '❌'}\n"
         f"Бот-соперник → {'✅' if bot_correct else '❌'}\n"
         f"Правильный ответ: <b>{correct_display}</b>\n"
+        f"Столица: {session.current_question['capital']}\n"
     )
-    if session.current_question["type"] == "country_to_capital":
-        result_text += f"Столица: {session.current_question['capital']}\n"
     result_text += (
         f"Счёт: Команда {session.team_score} — Бот {session.bot_score} (Раунд {session.current_round}/{session.total_rounds})"
     )
