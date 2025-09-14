@@ -101,6 +101,7 @@ class CardSession:
     fact_message_id: int | None = None
     fact_subject: str | None = None
     fact_text: str | None = None
+    current_answered: bool = False
 
 
 @dataclass
