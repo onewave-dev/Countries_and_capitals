@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -113,6 +114,11 @@ async def healthz():
 async def root():
     return {"status": "ok"}
 
+
+@app.head("/")
+async def head_root():
+    return {"ok": True}
+
 @app.get("/set_webhook")
 async def set_webhook():
     if not PUBLIC_URL:
@@ -150,6 +156,7 @@ async def telegram_webhook(request: Request):
         logger.exception("update processing failed")
         status_code = getattr(exc, "status_code", 500)
         response = JSONResponse({"ok": False})
+        response.status_code = status_code
         response.headers["X-Telegram-Status"] = str(status_code)
         return response
 
@@ -169,19 +176,33 @@ async def on_startup():
         expected_url = f"{PUBLIC_URL}{WEBHOOK_PATH}?secret_token={WEBHOOK_SECRET}"
         info = await tg_call(application.bot.get_webhook_info)
         if info.last_error_message:
-            logger.warning(
-                "Clearing webhook due to error: %s",
-                info.last_error_message,
-            )
-            await tg_call(
-                application.bot.delete_webhook,
-                drop_pending_updates=True,
-            )
-            await tg_call(
-                application.bot.set_webhook,
-                url=expected_url,
-                allowed_updates=[],
-            )
+            error_date = info.last_error_date
+            recent = False
+            if error_date:
+                if error_date.tzinfo is None:
+                    error_date = error_date.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                recent = now - error_date <= timedelta(minutes=5)
+            if recent:
+                logger.warning(
+                    "Clearing webhook due to error: %s",
+                    info.last_error_message,
+                )
+                await tg_call(
+                    application.bot.delete_webhook,
+                    drop_pending_updates=True,
+                )
+                await tg_call(
+                    application.bot.set_webhook,
+                    url=expected_url,
+                    allowed_updates=[],
+                )
+            else:
+                logger.info(
+                    "Webhook error '%s' at %s ignored (older than threshold)",
+                    info.last_error_message,
+                    error_date,
+                )
         elif info.url != expected_url:
             logger.info(
                 "Re-registering webhook: expected %s, got %s",
