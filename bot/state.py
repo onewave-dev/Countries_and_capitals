@@ -122,8 +122,8 @@ class CoopSession:
     player_names: Dict[int, str] = field(default_factory=dict)
     continent_filter: str | None = None
     mode: str = "mixed"
-    difficulty: str = "easy"
-    total_rounds: int = 5
+    difficulty: str = ""
+    total_rounds: int = 0
     current_round: int = 0
     team_score: int = 0
     bot_score: int = 0

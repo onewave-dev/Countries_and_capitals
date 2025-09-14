@@ -16,7 +16,12 @@ from httpx import HTTPError
 from app import DATA
 from .state import CoopSession
 from .questions import pick_question
-from .keyboards import coop_answer_kb, coop_continent_kb, coop_invite_kb
+from .keyboards import (
+    coop_answer_kb,
+    coop_invite_kb,
+    coop_rounds_kb,
+    coop_difficulty_kb,
+)
 
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -258,24 +263,27 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             context.user_data.pop("coop_pending", None)
             try:
                 await update.message.reply_text(
-                    "Имя сохранено. Выберите континент.",
-                    reply_markup=coop_continent_kb(session_id),
+                    "Имя сохранено. Выберите число раундов.",
+                    reply_markup=coop_rounds_kb(session_id, user_id),
                 )
             except (TelegramError, HTTPError) as e:
                 logger.warning(
-                    "Failed to send continent keyboard to second player: %s", e
+                    "Failed to send rounds keyboard to second player: %s", e
                 )
             first_player = session.players[0]
             first_chat = session.player_chats[first_player]
             try:
                 await context.bot.send_message(
                     first_chat,
-                    "Второй игрок присоединился. Выберите континент.",
-                    reply_markup=coop_continent_kb(session_id),
+                    "Второй игрок присоединился. Выберите число раундов.",
+                    reply_markup=coop_rounds_kb(session_id, first_player),
+                )
+                context.application.user_data.get(first_player, {}).pop(
+                    "coop_pending", None
                 )
             except (TelegramError, HTTPError) as e:
                 logger.warning(
-                    "Failed to send continent keyboard to first player: %s", e
+                    "Failed to send rounds keyboard to first player: %s", e
                 )
         return
 
@@ -334,12 +342,29 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if player_id != update.effective_user.id:
             await q.answer("Не ваша кнопка", show_alert=True)
             return
+        if session.total_rounds:
+            await q.answer("Число раундов уже выбрано", show_alert=True)
+            try:
+                await q.edit_message_reply_markup(None)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to clear rounds keyboard: %s", e)
+            return
         session.total_rounds = rounds
         await q.answer()
         try:
             await q.edit_message_reply_markup(None)
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to clear rounds keyboard: %s", e)
+        for pid in session.players:
+            chat_id = session.player_chats[pid]
+            try:
+                await context.bot.send_message(
+                    chat_id,
+                    "Выберите сложность соперника.",
+                    reply_markup=coop_difficulty_kb(session_id, pid),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send difficulty keyboard: %s", e)
         return
 
     if action == "diff":
@@ -356,32 +381,22 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if player_id != update.effective_user.id:
             await q.answer("Не ваша кнопка", show_alert=True)
             return
+        if session.difficulty:
+            await q.answer("Сложность уже выбрана", show_alert=True)
+            try:
+                await q.edit_message_reply_markup(None)
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to clear difficulty keyboard: %s", e)
+            return
         session.difficulty = difficulty
         await q.answer()
         try:
             await q.edit_message_reply_markup(None)
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to clear difficulty keyboard: %s", e)
-        return
-
-    if action == "cont":
-        session_id = parts[2]
-        continent = parts[3]
-        session = sessions.get(session_id)
-        if not session or update.effective_user.id not in session.players:
-            await q.answer()
-            return
-        if session.continent_filter is not None:
-            await q.answer("Континент уже выбран", show_alert=True)
-            return
-        session.continent_filter = None if continent == "Весь мир" else continent
-        await q.answer()
-        try:
-            await q.edit_message_reply_markup(None)
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to clear continent keyboard: %s", e)
-        session.current_round = 1
-        await _start_round(context, session)
+        if session.total_rounds and session.difficulty:
+            session.current_round = 1
+            await _start_round(context, session)
         return
 
     if action != "ans":
