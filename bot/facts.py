@@ -58,7 +58,18 @@ async def generate_llm_fact(country: str, exclude: str) -> str:
         else:
             kwargs["max_tokens"] = 80
         resp = await _client.chat.completions.create(**kwargs)
-        text = resp.choices[0].message.content.strip().replace("\n", " ")
+        content = resp.choices[0].message.content
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            text = "".join(
+                seg.get("text", "")
+                for seg in content
+                if isinstance(seg, dict) and "text" in seg
+            )
+        else:
+            text = str(content)
+        text = text.strip().replace("\n", " ")
         return text[:150]
     except Exception as e:  # noqa: BLE001
         logger.warning("LLM fact generation failed: %s", e)
