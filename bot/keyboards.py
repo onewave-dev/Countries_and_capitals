@@ -18,11 +18,19 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     """Top-level menu with learning modes and games."""
 
     rows = [
-        [InlineKeyboardButton("ОБУЧЕНИЕ", callback_data="menu:void")],
+        [
+            InlineKeyboardButton(
+                f"{SPACER} ОБУЧЕНИЕ {SPACER}", callback_data="menu:void"
+            )
+        ],
         [InlineKeyboardButton("📘 Флэш-карточки", callback_data="menu:cards")],
         [InlineKeyboardButton("📋 Учить по спискам", callback_data="menu:list")],
         [InlineKeyboardButton("📝 Тест", callback_data="menu:test")],
-        [InlineKeyboardButton("ИГРЫ", callback_data="menu:void")],
+        [
+            InlineKeyboardButton(
+                f"{SPACER} ИГРЫ {SPACER}", callback_data="menu:void"
+            )
+        ],
         [InlineKeyboardButton("⏱ Игра на время", callback_data="menu:sprint")],
         [InlineKeyboardButton("🤝 Дуэт против Бота", callback_data="menu:coop")],
     ]
