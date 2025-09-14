@@ -65,3 +65,28 @@ def test_cards_more_fact(monkeypatch):
         assert session.fact_message_id is None
 
     asyncio.run(run())
+
+
+def test_generate_llm_fact_handles_list_content(monkeypatch):
+    async def run():
+        resp = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=[
+                            {"type": "text", "text": "fact1"},
+                            {"type": "text", "text": " fact2"},
+                        ]
+                    )
+                )
+            ]
+        )
+        create = AsyncMock(return_value=resp)
+        fake_client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        )
+        monkeypatch.setattr(bot.facts, "_client", fake_client)
+        fact = await bot.facts.generate_llm_fact("Канада", "old")
+        assert fact == "fact1 fact2"
+
+    asyncio.run(run())
