@@ -135,6 +135,8 @@ class CoopSession:
     current_round: int = 0
     team_score: int = 0
     bot_score: int = 0
+    current_turn_index: int = 0
+    bot_think_delay: float = 2.0
     answers: Dict[int, bool] = field(default_factory=dict)
     answer_options: Dict[int, str] = field(default_factory=dict)
     question_message_ids: Dict[int, int] = field(default_factory=dict)
