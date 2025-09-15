@@ -219,7 +219,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await context.bot.send_message(q.message.chat_id, text, parse_mode="HTML")
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send test feedback: %s", e)
-        await asyncio.sleep(2)
+        await asyncio.sleep(4)
         await _next_question(update, context, replace_message=False)
         return
 
@@ -292,7 +292,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session.fact_message_id = msg.message_id
             session.fact_subject = current["country"]
             session.fact_text = fact
-        await asyncio.sleep(2)
+        await asyncio.sleep(4)
         await _next_question(update, context, replace_message=False)
         return
 

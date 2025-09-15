@@ -293,7 +293,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send card feedback: %s", e)
         session.current_answered = True
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
         await _next_card(update, context, replace_message=False)
         return
 
@@ -369,7 +369,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session.fact_subject = current["country"]
             session.fact_text = fact
         session.current_answered = True
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
         await _next_card(update, context, replace_message=False)
         return
 
