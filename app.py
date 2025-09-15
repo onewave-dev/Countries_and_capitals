@@ -80,6 +80,16 @@ from bot.handlers_stats import cmd_stats
 from bot.handlers_quit import cmd_quit
 
 
+async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log unexpected errors raised by handlers."""
+
+    logger.error(
+        "Unhandled exception while processing update: %s",
+        update,
+        exc_info=context.error,
+    )
+
+
 # Register handlers
 application.add_handler(CommandHandler("start", cmd_start))
 application.add_handler(CallbackQueryHandler(cb_menu, pattern="^menu:"))
@@ -96,6 +106,7 @@ application.add_handler(CommandHandler(["quit", "exit"], cmd_quit))
 application.add_handler(
     MessageHandler((filters.TEXT & ~filters.COMMAND) | filters.CONTACT, msg_coop)
 )
+application.add_error_handler(log_error)
 
 
 async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
