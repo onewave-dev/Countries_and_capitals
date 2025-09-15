@@ -3,7 +3,6 @@
 import logging
 import random
 import asyncio
-from typing import Optional
 
 from telegram import Update
 from telegram.error import TelegramError
@@ -179,35 +178,6 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to return to menu: %s", e)
         return
-    if len(parts) == 3 and parts[1] != "opt":
-        await q.answer()
-        # Session setup: cards:<continent>:<direction>
-        _, continent, direction = parts
-        continent_filter: Optional[str] = None if continent == "Весь мир" else continent
-        if direction == "mixed":
-            countries = DATA.countries(continent_filter)
-            queue = [
-                (c, random.choice(["country_to_capital", "capital_to_country"]))
-                for c in countries
-            ]
-        else:
-            queue = DATA.items(continent_filter, direction)
-        random.shuffle(queue)
-        session = CardSession(
-            user_id=update.effective_user.id,
-            continent_filter=continent_filter,
-            mode=direction,
-            queue=queue,
-        )
-        context.user_data["card_session"] = session
-        logger.debug(
-            "Card session started for user %s: continent=%s mode=%s total=%d",
-            session.user_id,
-            continent_filter,
-            direction,
-            len(queue),
-        )
-        await _next_card(update, context)
         return
 
     session: CardSession | None = context.user_data.get("card_session")

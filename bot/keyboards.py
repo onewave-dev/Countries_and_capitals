@@ -134,36 +134,6 @@ def back_to_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def direction_kb(prefix: str, continent: str) -> InlineKeyboardMarkup:
-    """Keyboard for choosing question direction.
-
-    ``prefix`` is the final namespace (``cards`` or ``sprint``) so that pressing
-    a button dispatches to the respective handler via ``^cards:``/``^sprint:``.
-    """
-
-    rows = [
-        [
-            InlineKeyboardButton(
-                "Страна → столица",
-                callback_data=f"{prefix}:{continent}:country_to_capital",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "Столица → страна",
-                callback_data=f"{prefix}:{continent}:capital_to_country",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "Смешанный",
-                callback_data=f"{prefix}:{continent}:mixed",
-            )
-        ],
-    ]
-    return InlineKeyboardMarkup(rows)
-
-
 def sprint_start_kb(continent: str) -> InlineKeyboardMarkup:
     """Keyboard with a single start button for the sprint."""
 

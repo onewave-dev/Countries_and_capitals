@@ -11,7 +11,7 @@ def pick_question(
     asked_countries: set[str] | None = None,
 ):
     """Generate a question based on the provided mode."""
-    # mode: "country_to_capital" | "capital_to_country" | "mixed"
+    # ``mode``: internal question type ("country_to_capital", "capital_to_country" or "mixed" for random direction)
     countries = data.countries(continent)
     if asked_countries:
         countries = [c for c in countries if c not in asked_countries]
