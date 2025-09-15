@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import random
 import uuid
-import logging
 from typing import Dict, Tuple
 
 from telegram import Update, ReplyKeyboardRemove
@@ -208,6 +209,13 @@ async def _next_turn(
         session.turn_index = 0
 
     if session.remaining_pairs:
+        pause_seconds = 2.0
+        logger.debug(
+            "Coop next question scheduled after %.1f seconds pause for session %s",
+            pause_seconds,
+            session.session_id,
+        )
+        await asyncio.sleep(pause_seconds)
         await _ask_current_pair(context, session)
     else:
         await _finish_game(context, session)
