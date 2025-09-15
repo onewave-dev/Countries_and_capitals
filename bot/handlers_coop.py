@@ -8,7 +8,7 @@ import uuid
 import logging
 from typing import Dict, Tuple
 
-from telegram import Update, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove, Chat, User
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from httpx import HTTPError
@@ -351,22 +351,30 @@ async def cmd_coop_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             logger.warning("Failed to notify match cancel: %s", e)
 
 
-async def cmd_coop_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_coop_test(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    user: User | None = None,
+    chat: Chat | None = None,
+) -> None:
     """Admin-only helper command to quickly start a match."""
 
-    if update.effective_user.id != ADMIN_ID:
+    user = user or update.effective_user
+    chat = chat or update.effective_chat
+
+    if not user or user.id != ADMIN_ID:
         return
 
     sessions = _get_sessions(context)
     session_id = uuid.uuid4().hex[:8]
     session = CoopSession(session_id=session_id, difficulty="medium")
-    human_id = update.effective_user.id
-    human_chat_id = getattr(update.effective_chat, "id", None)
+    human_id = user.id
+    human_chat_id = chat.id if chat else None
     session.players = [human_id, DUMMY_PLAYER_ID]
     if human_chat_id is not None:
         session.player_chats = {human_id: human_chat_id}
     session.player_names = {
-        human_id: getattr(update.effective_user, "full_name", None) or "Тестер",
+        human_id: getattr(user, "full_name", None) or "Тестер",
         DUMMY_PLAYER_ID: "Бот-помощник",
     }
     selected_continent = context.user_data.get("continent")
@@ -477,9 +485,12 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         continent_filter = None if continent == "Весь мир" else continent
         if context.user_data.pop("coop_admin", False):
             # For admin quick start run test command
-            update.effective_chat = q.message.chat  # ensure chat available
-            update.effective_user = q.from_user
-            await cmd_coop_test(update, context)
+            await cmd_coop_test(
+                update,
+                context,
+                user=q.from_user,
+                chat=q.message.chat,
+            )
         else:
             await cmd_coop_capitals(update, context)
             sid, session = _find_user_session(sessions, update.effective_user.id)
