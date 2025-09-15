@@ -21,7 +21,7 @@ from .keyboards import (
     fact_more_kb,
 )
 from .flags import get_country_flag, get_flag_image_path
-from .handlers_menu import WELCOME
+from .handlers_menu import WELCOME, ADMIN_ID
 from .facts import get_static_fact, generate_llm_fact
 
 
@@ -172,7 +172,10 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await q.answer()
         context.user_data.pop("card_session", None)
         try:
-            await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
+            await q.edit_message_text(
+                WELCOME,
+                reply_markup=main_menu_kb(update.effective_user.id == ADMIN_ID),
+            )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to return to menu: %s", e)
         return

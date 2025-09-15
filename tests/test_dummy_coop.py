@@ -1,11 +1,53 @@
 import asyncio
 from types import SimpleNamespace
 
-
 def test_admin_button_visible_only_for_admin(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
-    import bot.handlers_menu as hm
+    import importlib
+    hm = importlib.reload(__import__("bot.handlers_menu", fromlist=["*"]))
     hm.ADMIN_ID = 1
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None):
+            self.sent.append((chat_id, text, reply_markup))
+
+    bot = DummyBot()
+    context = SimpleNamespace(bot=bot, args=[], user_data={}, application=SimpleNamespace(bot_data={}))
+    update = SimpleNamespace(effective_chat=SimpleNamespace(id=1), effective_user=SimpleNamespace(id=1))
+    asyncio.run(hm.cmd_start(update, context))
+    markup = bot.sent[0][2]
+    buttons = [btn.text for row in markup.inline_keyboard for btn in row]
+    assert any("[адм.]" in b for b in buttons)
+
+    bot.sent.clear()
+    update2 = SimpleNamespace(effective_chat=SimpleNamespace(id=2), effective_user=SimpleNamespace(id=2))
+    asyncio.run(hm.cmd_start(update2, context))
+    markup2 = bot.sent[0][2]
+    buttons2 = [btn.text for row in markup2.inline_keyboard for btn in row]
+    assert not any("[адм.]" in b for b in buttons2)
+
+
+def test_coop_continent_selection(monkeypatch):
+    monkeypatch.setenv("ADMIN_ID", "99")
+    import importlib
+    hm = importlib.reload(__import__("bot.handlers_menu", fromlist=["*"]))
+    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    hm.ADMIN_ID = 99
+    hco.ADMIN_ID = 99
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    context = SimpleNamespace(bot=bot, user_data={}, application=SimpleNamespace(bot_data={}), args=[])
 
     class DummyCQ:
         def __init__(self):
@@ -18,43 +60,33 @@ def test_admin_button_visible_only_for_admin(monkeypatch):
         async def edit_message_text(self, text, reply_markup=None):
             self.markup = reply_markup
 
-    update = SimpleNamespace(
-        callback_query=DummyCQ(), effective_user=SimpleNamespace(id=1)
-    )
-    context = SimpleNamespace()
-    asyncio.run(hm.cb_menu(update, context))
-    assert update.callback_query.markup is not None
-    buttons = [
-        btn.text for row in update.callback_query.markup.inline_keyboard for btn in row
-    ]
-    assert any("[адм.]" in b for b in buttons)
+    update_menu = SimpleNamespace(callback_query=DummyCQ(), effective_user=SimpleNamespace(id=1))
+    asyncio.run(hm.cb_menu(update_menu, context))
+    buttons = [btn.callback_data for row in update_menu.callback_query.markup.inline_keyboard for btn in row]
+    assert "coop:Азия" in buttons
 
-    # Non-admin should not see the button
-    class Bot:
-        def __init__(self):
-            self.sent = []
-
-        async def send_message(self, chat_id, text, reply_markup=None):
-            self.sent.append((chat_id, text, reply_markup))
-
-    bot = Bot()
-    q = DummyCQ()
-    update2 = SimpleNamespace(
-        callback_query=q,
-        effective_user=SimpleNamespace(id=2),
+    cq2 = SimpleNamespace(data="coop:Азия", message=SimpleNamespace(chat=SimpleNamespace(id=100)))
+    async def answer(*args, **kwargs):
+        pass
+    cq2.answer = answer
+    update_coop = SimpleNamespace(
+        callback_query=cq2,
+        effective_user=SimpleNamespace(id=1),
         effective_chat=SimpleNamespace(id=100, type="private"),
         message=None,
     )
-    context2 = SimpleNamespace(
-        bot=bot, user_data={}, application=SimpleNamespace(bot_data={})
-    )
-    asyncio.run(hm.cb_menu(update2, context2))
-    assert q.markup is None
+    asyncio.run(hco.cb_coop(update_coop, context))
+    sessions = context.application.bot_data.get("coop_sessions")
+    assert sessions, "Session not created"
+    session = next(iter(sessions.values()))
+    assert session.continent_filter == "Азия"
+    assert context.user_data["continent"] == "Азия"
 
 
 def test_dummy_player_cycle(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
-    import bot.handlers_coop as hco
+    import importlib
+    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
     hco.ADMIN_ID = 1
 
     class DummyBot:
@@ -100,7 +132,7 @@ def test_dummy_player_cycle(monkeypatch):
     asyncio.run(hco.cmd_coop_test(update, context))
     session = next(iter(context.application.bot_data["coop_sessions"].values()))
 
-    for i in range(3):
+    for _ in range(3):
         qdata = f"coop:ans:{session.session_id}:1:1"
         cq = SimpleNamespace(data=qdata)
 

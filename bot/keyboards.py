@@ -48,8 +48,15 @@ def _section_heading(text: str, width: int = SECTION_WIDTH) -> str:
     return f"{LINE_CHAR * left}{label}{LINE_CHAR * right}"
 
 
-def main_menu_kb() -> InlineKeyboardMarkup:
-    """Top-level menu with learning modes and games."""
+def main_menu_kb(is_admin: bool = False) -> InlineKeyboardMarkup:
+    """Top-level menu with learning modes and games.
+
+    Parameters
+    ----------
+    is_admin: bool, optional
+        When ``True`` an additional admin-only test button is appended to the
+        games section.
+    """
 
     options = [
         ("📘 Флэш-карточки", "menu:cards"),
@@ -58,6 +65,8 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         ("⏱ Игра на время", "menu:sprint"),
         ("🤝 Дуэт против Бота", "menu:coop"),
     ]
+    if is_admin:
+        options.append(("[адм.]\u202fТестовая игра", "menu:coop_admin"))
 
     # Determine the maximum visual width among option labels to balance the
     # decorative section headings.  Add four characters for the extra spacing
@@ -68,14 +77,13 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         width += 1
 
     rows = [
-        [InlineKeyboardButton(_section_heading("ОБУЧЕНИЕ", width), callback_data="menu:void")],
-        [InlineKeyboardButton(options[0][0], callback_data=options[0][1])],
-        [InlineKeyboardButton(options[1][0], callback_data=options[1][1])],
-        [InlineKeyboardButton(options[2][0], callback_data=options[2][1])],
-        [InlineKeyboardButton(_section_heading("ИГРЫ", width), callback_data="menu:void")],
-        [InlineKeyboardButton(options[3][0], callback_data=options[3][1])],
-        [InlineKeyboardButton(options[4][0], callback_data=options[4][1])],
+        [InlineKeyboardButton(_section_heading("ОБУЧЕНИЕ", width), callback_data="menu:void")]
     ]
+    for label, data in options[:3]:
+        rows.append([InlineKeyboardButton(label, callback_data=data)])
+    rows.append([InlineKeyboardButton(_section_heading("ИГРЫ", width), callback_data="menu:void")])
+    for label, data in options[3:]:
+        rows.append([InlineKeyboardButton(label, callback_data=data)])
     return InlineKeyboardMarkup(rows)
 
 

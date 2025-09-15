@@ -14,7 +14,7 @@ from .state import SprintSession, record_sprint_result
 from .questions import pick_question
 from .flags import get_country_flag, get_flag_image_path
 from .keyboards import sprint_kb, sprint_result_kb
-from .handlers_menu import WELCOME, main_menu_kb
+from .handlers_menu import WELCOME, ADMIN_ID, main_menu_kb
 
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,10 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await q.answer()
         context.user_data.pop("sprint_session", None)
         try:
-            await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
+            await q.edit_message_text(
+                WELCOME,
+                reply_markup=main_menu_kb(update.effective_user.id == ADMIN_ID),
+            )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to return to menu: %s", e)
         return
@@ -142,7 +145,10 @@ async def cb_sprint(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop("sprint_session", None)
         context.user_data.pop("sprint_allow_skip", None)
         try:
-            await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
+            await q.edit_message_text(
+                WELCOME,
+                reply_markup=main_menu_kb(update.effective_user.id == ADMIN_ID),
+            )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to return to menu: %s", e)
         logger.info("Sprint stopped early by user %s", update.effective_user.id)
