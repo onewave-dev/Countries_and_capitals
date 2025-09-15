@@ -1,6 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
+
 def test_admin_button_visible_only_for_admin(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
     import importlib
@@ -30,57 +31,80 @@ def test_admin_button_visible_only_for_admin(monkeypatch):
     assert not any("[адм.]" in b for b in buttons2)
 
 
-def test_coop_continent_selection(monkeypatch):
-    monkeypatch.setenv("ADMIN_ID", "99")
+def test_coop_flow_steps(monkeypatch):
     import importlib
-    hm = importlib.reload(__import__("bot.handlers_menu", fromlist=["*"]))
     hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
-    hm.ADMIN_ID = 99
+    monkeypatch.setenv("ADMIN_ID", "99")
     hco.ADMIN_ID = 99
 
     class DummyBot:
         def __init__(self):
             self.sent = []
 
-        async def send_message(self, chat_id, text, reply_markup=None):
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
             self.sent.append((chat_id, text, reply_markup))
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
-    context = SimpleNamespace(bot=bot, user_data={}, application=SimpleNamespace(bot_data={}), args=[])
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1, 2]
+    session.player_chats = {1: 1, 2: 2}
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={"coop_pending": {"session_id": "s1", "stage": "name"}},
+        application=SimpleNamespace(bot_data={"coop_sessions": {"s1": session}}),
+    )
 
-    class DummyCQ:
-        def __init__(self):
-            self.data = "menu:coop"
-            self.markup = None
+    async def reply_text(text, reply_markup=None):
+        bot.sent.append((2, text, reply_markup))
+        return SimpleNamespace(message_id=len(bot.sent))
 
-        async def answer(self, *args, **kwargs):
-            pass
+    update_name = SimpleNamespace(
+        effective_user=SimpleNamespace(id=2),
+        message=SimpleNamespace(text="B", reply_text=reply_text),
+    )
+    asyncio.run(hco.msg_coop(update_name, context))
+    # both players receive continent keyboard
+    assert any(
+        "coop:cont:s1:" in btn.callback_data
+        for row in bot.sent[-1][2].inline_keyboard
+        for btn in row
+    )
 
-        async def edit_message_text(self, text, reply_markup=None):
-            self.markup = reply_markup
+    cq_cont = SimpleNamespace(
+        data="coop:cont:s1:Азия",
+        message=SimpleNamespace(chat=SimpleNamespace(id=2)),
+    )
 
-    update_menu = SimpleNamespace(callback_query=DummyCQ(), effective_user=SimpleNamespace(id=1))
-    asyncio.run(hm.cb_menu(update_menu, context))
-    buttons = [btn.callback_data for row in update_menu.callback_query.markup.inline_keyboard for btn in row]
-    assert "coop:Азия" in buttons
-
-    cq2 = SimpleNamespace(data="coop:Азия", message=SimpleNamespace(chat=SimpleNamespace(id=100)))
     async def answer(*args, **kwargs):
         pass
-    cq2.answer = answer
-    update_coop = SimpleNamespace(
-        callback_query=cq2,
-        effective_user=SimpleNamespace(id=1),
-        effective_chat=SimpleNamespace(id=100, type="private"),
-        message=None,
-    )
-    asyncio.run(hco.cb_coop(update_coop, context))
-    sessions = context.application.bot_data.get("coop_sessions")
-    assert sessions, "Session not created"
-    session = next(iter(sessions.values()))
+
+    cq_cont.answer = answer
+    calls = []
+
+    async def fake_start_game(ctx, sess):
+        calls.append(sess.session_id)
+
+    monkeypatch.setattr(hco, "_start_game", fake_start_game)
+    update_cont = SimpleNamespace(callback_query=cq_cont, effective_user=SimpleNamespace(id=2))
+    asyncio.run(hco.cb_coop(update_cont, context))
     assert session.continent_filter == "Азия"
-    assert context.user_data["continent"] == "Азия"
+    assert calls == []
+    # difficulty keyboard sent
+    assert any(
+        "coop:diff:s1:" in btn.callback_data
+        for row in bot.sent[-1][2].inline_keyboard
+        for btn in row
+    )
+
+    cq_diff = SimpleNamespace(
+        data="coop:diff:s1:2:easy",
+        message=SimpleNamespace(chat=SimpleNamespace(id=2)),
+    )
+    cq_diff.answer = answer
+    update_diff = SimpleNamespace(callback_query=cq_diff, effective_user=SimpleNamespace(id=2))
+    asyncio.run(hco.cb_coop(update_diff, context))
+    assert calls == ["s1"]
 
 
 def test_bot_accuracy(monkeypatch):

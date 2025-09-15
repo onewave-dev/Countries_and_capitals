@@ -31,6 +31,41 @@ def _setup_session(monkeypatch, continent=None):
     return hco, session, context, bot
 
 
+def test_continent_prompt_after_names(monkeypatch):
+    import importlib
+    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1, 2]
+    session.player_chats = {1: 1, 2: 2}
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={"coop_pending": {"session_id": "s1", "stage": "name"}},
+        application=SimpleNamespace(bot_data={"coop_sessions": {"s1": session}}),
+    )
+
+    async def reply_text(text, reply_markup=None):
+        bot.sent.append((2, text, reply_markup))
+        return SimpleNamespace(message_id=len(bot.sent))
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=2),
+        message=SimpleNamespace(text="B", reply_text=reply_text),
+    )
+    asyncio.run(hco.msg_coop(update, context))
+    texts = [t for _, t, _ in bot.sent]
+    assert any("Выберите континент" in t for t in texts)
+
+
 def test_question_stays_on_wrong_answer(monkeypatch):
     hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))

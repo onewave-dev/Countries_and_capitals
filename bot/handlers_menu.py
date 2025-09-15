@@ -68,8 +68,16 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(
             "📝 Тест: выбери режим.", reply_markup=test_start_kb()
         )
-    elif data in {"menu:coop", "menu:coop_admin"}:
-        context.user_data["coop_admin"] = data == "menu:coop_admin"
+    elif data == "menu:coop":
+        from .handlers_coop import cmd_coop_capitals
+
+        await q.edit_message_text("🤝 Дуэт против Бота")
+        update.effective_chat = q.message.chat
+        update.effective_user = q.from_user
+        update.message = None
+        await cmd_coop_capitals(update, context)
+    elif data == "menu:coop_admin":
+        context.user_data["coop_admin"] = True
         await q.edit_message_text(
             "🤝 Дуэт против Бота: выбери континент.",
             reply_markup=continent_kb("coop"),
