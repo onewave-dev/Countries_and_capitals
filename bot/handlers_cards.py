@@ -214,7 +214,9 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not session or not hasattr(session, "current"):
         await q.answer()
         try:
-            await q.edit_message_text("Сессия не найдена")
+            await q.edit_message_text(
+                "Сессия не найдена. Нажмите /start, чтобы начать заново."
+            )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to notify missing session: %s", e)
         return
