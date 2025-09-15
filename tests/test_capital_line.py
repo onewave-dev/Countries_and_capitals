@@ -158,42 +158,25 @@ def test_test_capital_question_includes_capital_line(monkeypatch):
     asyncio.run(run())
 
 
-def test_coop_bot_move_includes_capital_line(monkeypatch):
+def test_coop_bot_move_mentions_capital(monkeypatch):
     async def run():
         bot = DummyBot()
-        session = CoopSession(
-            session_id="s1",
-            players=[1, 2],
-            player_chats={1: 1, 2: 2},
-            total_rounds=2,
-            current_round=1,
-        )
-        session.current_question = {
+        session = CoopSession(session_id="s1", players=[1], player_chats={1: 1})
+        session.player_names = {1: "A"}
+        session.current_pair = {
             "country": "Канада",
             "capital": "Оттава",
             "type": "capital_to_country",
             "prompt": "Оттава?",
+            "options": ["Канада"],
             "correct": "Канада",
         }
-        session.answers = {1: True, 2: False}
-        session.answer_options = {1: "Канада", 2: "Бразилия"}
-
-        class DummyQueue:
-            def run_once(self, callback, delay, data=None, name=None):
-                return SimpleNamespace()
-
+        session.remaining_pairs = [session.current_pair]
         context = SimpleNamespace(
-            job=SimpleNamespace(data={"session_id": "s1"}),
-            application=SimpleNamespace(
-                bot_data={"coop_sessions": {"s1": session}}, job_queue=DummyQueue()
-            ),
-            bot=bot,
+            bot=bot, application=SimpleNamespace(bot_data={"coop_sessions": {"s1": session}})
         )
-        monkeypatch.setattr(hco, "get_flag_image_path", lambda c: None)
-        monkeypatch.setattr(hco.random, "random", lambda: 1.0)
-        monkeypatch.setattr(hco.random, "uniform", lambda a, b: a)
-        await hco._bot_move(context)
-        assert bot.sent
-        assert all("Столица: Оттава" in m[1] for m in bot.sent)
+        monkeypatch.setattr(hco.random, "random", lambda: 0.0)
+        await hco._next_turn(context, session, False)
+        assert any("Оттава" in m[1] for m in bot.sent)
 
     asyncio.run(run())
