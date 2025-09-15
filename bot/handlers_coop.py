@@ -26,6 +26,7 @@ from .flags import get_flag_image_path
 
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+DUMMY_ID = -1
 
 logger = logging.getLogger(__name__)
 
@@ -59,25 +60,31 @@ async def _start_round(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     session.current_turn_index = 0
 
     current_player = session.players[session.current_turn_index]
-    current_chat = session.player_chats[current_player]
-    try:
-        msg = await context.bot.send_message(
-            current_chat,
-            f"Раунд {session.current_round}/{session.total_rounds}\n{question['prompt']}",
-            reply_markup=coop_answer_kb(
-                session.session_id, current_player, question["options"]
-            ),
-            parse_mode="HTML",
-        )
-        session.question_message_ids[current_player] = msg.message_id
-    except (TelegramError, HTTPError) as e:
-        logger.warning("Failed to send coop question: %s", e)
+    current_chat = session.player_chats.get(current_player)
+    if current_chat:
+        try:
+            msg = await context.bot.send_message(
+                current_chat,
+                f"Раунд {session.current_round}/{session.total_rounds}\n{question['prompt']}",
+                reply_markup=coop_answer_kb(
+                    session.session_id, current_player, question["options"]
+                ),
+                parse_mode="HTML",
+            )
+            session.question_message_ids[current_player] = msg.message_id
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send coop question: %s", e)
+
+    if session.dummy_mode:
+        return
 
     waiting_text = "Ожидаем ход другого игрока."
     for idx, pid in enumerate(session.players):
         if idx == session.current_turn_index:
             continue
-        chat_id = session.player_chats[pid]
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
         try:
             await context.bot.send_message(
                 chat_id,
@@ -96,6 +103,29 @@ async def _run_next_round(context: ContextTypes.DEFAULT_TYPE) -> None:
     if not session:
         return
     await _start_round(context, session)
+
+
+async def _dummy_move(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
+    """Simulate the dummy player's answer following a 2/3 correct pattern."""
+
+    if not session.current_question:
+        return
+
+    idx = session.dummy_counter % 3
+    session.dummy_counter += 1
+    correct = idx < 2
+    if correct:
+        session.team_score += 1
+        option = session.current_question["correct"]
+    else:
+        wrong = [
+            o
+            for o in session.current_question["options"]
+            if o != session.current_question["correct"]
+        ]
+        option = random.choice(wrong) if wrong else session.current_question["correct"]
+    session.answers[DUMMY_ID] = correct
+    session.answer_options[DUMMY_ID] = option
 
 
 async def _bot_move(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -136,7 +166,9 @@ async def _bot_move(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     flag_path = get_flag_image_path(session.current_question["country"])
     for pid in session.players:
-        chat_id = session.player_chats[pid]
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
         try:
             if flag_path:
                 with flag_path.open("rb") as f:
@@ -186,7 +218,9 @@ async def _finish_match(context: ContextTypes.DEFAULT_TYPE, session_id: str) -> 
 
     text = f"Матч завершён. Счёт {session.team_score}:{session.bot_score}. {result}"
     for player_id in session.players:
-        chat_id = session.player_chats[player_id]
+        chat_id = session.player_chats.get(player_id)
+        if not chat_id:
+            continue
         try:
             await context.bot.send_message(chat_id, text)
         except (TelegramError, HTTPError) as e:
@@ -319,11 +353,9 @@ async def cmd_coop_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     sessions = _get_sessions(context)
     session_id = uuid.uuid4().hex[:8]
-    session = CoopSession(session_id=session_id)
-    session.players = [update.effective_user.id, update.effective_user.id]
-    session.player_chats = {
-        update.effective_user.id: update.effective_chat.id,
-    }
+    session = CoopSession(session_id=session_id, dummy_mode=True)
+    session.players = [update.effective_user.id, DUMMY_ID]
+    session.player_chats = {update.effective_user.id: update.effective_chat.id}
     session.total_rounds = 3
     session.difficulty = "medium"
     sessions[session_id] = session
@@ -431,6 +463,14 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     action = parts[1]
 
     sessions = _get_sessions(context)
+
+    if action == "test":
+        if update.effective_user.id == ADMIN_ID:
+            await q.answer()
+            await cmd_coop_test(update, context)
+        else:
+            await q.answer()
+        return
 
     if action == "rounds":
         session_id = parts[2]
@@ -540,32 +580,39 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session.current_turn_index += 1
     if session.current_turn_index < len(session.players):
         next_pid = session.players[session.current_turn_index]
-        next_chat = session.player_chats[next_pid]
-        try:
-            msg = await context.bot.send_message(
-                next_chat,
-                f"Раунд {session.current_round}/{session.total_rounds}\n{session.current_question['prompt']}",
-                reply_markup=coop_answer_kb(
-                    session.session_id, next_pid, session.current_question["options"]
-                ),
-                parse_mode="HTML",
-            )
-            session.question_message_ids[next_pid] = msg.message_id
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to send coop question: %s", e)
-
-        for pid in session.players:
-            if pid == next_pid:
-                continue
-            chat_id = session.player_chats[pid]
+        next_chat = session.player_chats.get(next_pid)
+        if session.dummy_mode and not next_chat:
+            await _dummy_move(context, session)
+        else:
             try:
-                await context.bot.send_message(chat_id, "Ожидаем ход другого игрока.")
+                msg = await context.bot.send_message(
+                    next_chat,
+                    f"Раунд {session.current_round}/{session.total_rounds}\n{session.current_question['prompt']}",
+                    reply_markup=coop_answer_kb(
+                        session.session_id, next_pid, session.current_question["options"]
+                    ),
+                    parse_mode="HTML",
+                )
+                session.question_message_ids[next_pid] = msg.message_id
             except (TelegramError, HTTPError) as e:
-                logger.warning("Failed to notify waiting player: %s", e)
-        return
+                logger.warning("Failed to send coop question: %s", e)
+
+            for pid in session.players:
+                if pid == next_pid:
+                    continue
+                chat_id = session.player_chats.get(pid)
+                if not chat_id:
+                    continue
+                try:
+                    await context.bot.send_message(chat_id, "Ожидаем ход другого игрока.")
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to notify waiting player: %s", e)
+            return
 
     for pid in session.players:
-        chat_id = session.player_chats[pid]
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
         try:
             await context.bot.send_message(chat_id, "Бот думает…")
         except (TelegramError, HTTPError) as e:

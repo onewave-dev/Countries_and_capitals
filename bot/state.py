@@ -147,6 +147,8 @@ class CoopSession:
     question_message_ids: Dict[int, int] = field(default_factory=dict)
     current_question: Dict[str, Any] | None = None
     jobs: Dict[str, Job] = field(default_factory=dict)
+    dummy_mode: bool = False
+    dummy_counter: int = 0
 
 
 @dataclass
