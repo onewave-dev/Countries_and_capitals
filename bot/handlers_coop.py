@@ -460,9 +460,36 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
 
     parts = q.data.split(":")
-    action = parts[1]
-
     sessions = _get_sessions(context)
+
+    if len(parts) == 2:
+        # coop:<continent> – start match after selecting continent
+        continent = parts[1]
+        await q.answer()
+        context.user_data["continent"] = continent
+        continent_filter = None if continent == "Весь мир" else continent
+        if context.user_data.pop("coop_admin", False):
+            session_id = uuid.uuid4().hex[:8]
+            session = CoopSession(
+                session_id=session_id,
+                dummy_mode=True,
+                continent_filter=continent_filter,
+            )
+            session.players = [update.effective_user.id, DUMMY_ID]
+            session.player_chats = {update.effective_user.id: update.effective_chat.id}
+            session.total_rounds = 3
+            session.difficulty = "medium"
+            sessions[session_id] = session
+            session.current_round = 1
+            await _start_round(context, session)
+        else:
+            await cmd_coop_capitals(update, context)
+            sid, session = _find_user_session(sessions, update.effective_user.id)
+            if session:
+                session.continent_filter = continent_filter
+        return
+
+    action = parts[1]
 
     if action == "test":
         if update.effective_user.id == ADMIN_ID:

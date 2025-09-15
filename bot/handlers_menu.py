@@ -15,7 +15,6 @@ from .keyboards import (
     list_result_kb,
     back_to_menu_kb,
     test_start_kb,
-    coop_admin_kb,
 )
 from .flags import get_country_flag
 
@@ -36,7 +35,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     chat_id = update.effective_chat.id
-    await context.bot.send_message(chat_id, WELCOME, reply_markup=main_menu_kb())
+    is_admin = update.effective_user.id == ADMIN_ID
+    await context.bot.send_message(
+        chat_id, WELCOME, reply_markup=main_menu_kb(is_admin)
+    )
 
 async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle all ``^menu:`` callbacks."""
@@ -65,6 +67,12 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "menu:test":
         await q.edit_message_text(
             "📝 Тест: выбери режим.", reply_markup=test_start_kb()
+        )
+    elif data in {"menu:coop", "menu:coop_admin"}:
+        context.user_data["coop_admin"] = data == "menu:coop_admin"
+        await q.edit_message_text(
+            "🤝 Дуэт против Бота: выбери континент.",
+            reply_markup=continent_kb("coop"),
         )
 
     elif data.startswith("menu:cards:"):
@@ -132,19 +140,6 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id, chunk)
             await context.bot.send_message(chat_id, chunks[-1], reply_markup=list_result_kb())
 
-    elif data == "menu:coop":
-        if update.effective_user.id == ADMIN_ID:
-            await q.edit_message_text(
-                "Доступен тестовый матч.", reply_markup=coop_admin_kb()
-            )
-        else:
-            from .handlers_coop import cmd_coop_capitals
-
-            await cmd_coop_capitals(update, context)
-            try:
-                await q.message.delete()
-            except Exception:
-                pass
-
     elif data == "menu:main":
-        await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
+        is_admin = update.effective_user.id == ADMIN_ID
+        await q.edit_message_text(WELCOME, reply_markup=main_menu_kb(is_admin))
