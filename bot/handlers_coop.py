@@ -224,6 +224,17 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
         score = session.player_stats.get(pid, 0)
         lines.append(f"{name}: {score}")
     lines.append(f"Бот: {session.bot_stats}")
+
+    players_total = sum(session.player_stats.values())
+    if players_total > session.bot_stats:
+        result_line = "Победила команда игроков!"
+    elif players_total < session.bot_stats:
+        result_line = "Победил бот!"
+    else:
+        result_line = "Ничья!"
+
+    lines.append("")
+    lines.append(result_line)
     text = "\n".join(lines)
     for pid in session.players:
         chat_id = session.player_chats.get(pid)
