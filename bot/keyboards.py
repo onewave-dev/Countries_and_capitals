@@ -1,6 +1,7 @@
 """Inline keyboards used across the bot menus."""
 
 from textwrap import shorten
+from unicodedata import east_asian_width
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -10,14 +11,30 @@ from telegram import (
 
 # Text longer than this will be placed on its own row instead of pairing.
 LONG_OPTION = 15
-# Width of section headings like "ОБУЧЕНИЕ" surrounded by lines.
+# Width of section headings like "ОБУЧЕНИЕ" surrounded by lines.  The value is
+# used as a fallback when no dynamic width is supplied.
 SECTION_WIDTH = 36
 LINE_CHAR = "─"
 SPACER = LINE_CHAR * 12
 
 
-def _section_heading(text: str) -> str:
-    """Return ``text`` centered with dashes filling the width.
+def _visible_len(text: str) -> int:
+    """Approximate visual width of ``text`` in monospace cells.
+
+    Emoji and other wide characters often take two cells on desktop Telegram
+    clients.  ``east_asian_width`` classifies such characters as *Wide* or
+    *Fullwidth*, allowing us to better balance decorative headings so that
+    they appear centered both on mobile and desktop.
+    """
+
+    width = 0
+    for ch in text:
+        width += 2 if east_asian_width(ch) in {"F", "W"} else 1
+    return width
+
+
+def _section_heading(text: str, width: int = SECTION_WIDTH) -> str:
+    """Return ``text`` centered with dashes filling the given ``width``.
 
     Two extra spaces are added on both sides of ``text`` so that the visual
     length of the resulting string stays consistent between different
@@ -25,7 +42,7 @@ def _section_heading(text: str) -> str:
     """
 
     label = f"  {text}  "
-    pad = max(SECTION_WIDTH - len(label), 0)
+    pad = max(width - _visible_len(label), 0)
     left = pad // 2
     right = pad - left
     return f"{LINE_CHAR * left}{label}{LINE_CHAR * right}"
@@ -34,14 +51,30 @@ def _section_heading(text: str) -> str:
 def main_menu_kb() -> InlineKeyboardMarkup:
     """Top-level menu with learning modes and games."""
 
+    options = [
+        ("📘 Флэш-карточки", "menu:cards"),
+        ("📋 Учить по спискам", "menu:list"),
+        ("📝 Тест", "menu:test"),
+        ("⏱ Игра на время", "menu:sprint"),
+        ("🤝 Дуэт против Бота", "menu:coop"),
+    ]
+
+    # Determine the maximum visual width among option labels to balance the
+    # decorative section headings.  Add four characters for the extra spacing
+    # around the heading text and ensure the width is even so that padding is
+    # symmetrical.
+    width = max(_visible_len(label) for label, _ in options) + 4
+    if width % 2:
+        width += 1
+
     rows = [
-        [InlineKeyboardButton(_section_heading("ОБУЧЕНИЕ"), callback_data="menu:void")],
-        [InlineKeyboardButton("📘 Флэш-карточки", callback_data="menu:cards")],
-        [InlineKeyboardButton("📋 Учить по спискам", callback_data="menu:list")],
-        [InlineKeyboardButton("📝 Тест", callback_data="menu:test")],
-        [InlineKeyboardButton(_section_heading("ИГРЫ"), callback_data="menu:void")],
-        [InlineKeyboardButton("⏱ Игра на время", callback_data="menu:sprint")],
-        [InlineKeyboardButton("🤝 Дуэт против Бота", callback_data="menu:coop")],
+        [InlineKeyboardButton(_section_heading("ОБУЧЕНИЕ", width), callback_data="menu:void")],
+        [InlineKeyboardButton(options[0][0], callback_data=options[0][1])],
+        [InlineKeyboardButton(options[1][0], callback_data=options[1][1])],
+        [InlineKeyboardButton(options[2][0], callback_data=options[2][1])],
+        [InlineKeyboardButton(_section_heading("ИГРЫ", width), callback_data="menu:void")],
+        [InlineKeyboardButton(options[3][0], callback_data=options[3][1])],
+        [InlineKeyboardButton(options[4][0], callback_data=options[4][1])],
     ]
     return InlineKeyboardMarkup(rows)
 
