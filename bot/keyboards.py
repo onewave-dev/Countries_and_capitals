@@ -259,6 +259,16 @@ def coop_join_kb(session_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def coop_admin_kb() -> InlineKeyboardMarkup:
+    """Admin-only keyboard with a test match button."""
+
+    rows = [
+        [InlineKeyboardButton("[адм.]\u202fТестовая игра", callback_data="coop:test")],
+        [InlineKeyboardButton("В меню", callback_data="menu:main")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 def coop_invite_kb() -> ReplyKeyboardMarkup:
     """Keyboard for inviting the second player."""
 

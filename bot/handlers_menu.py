@@ -1,5 +1,6 @@
 """Handlers for the main menu flow."""
 
+import os
 import random
 
 from telegram import Update
@@ -14,8 +15,11 @@ from .keyboards import (
     list_result_kb,
     back_to_menu_kb,
     test_start_kb,
+    coop_admin_kb,
 )
 from .flags import get_country_flag
+
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 WELCOME = (
     "Привет! Это бот для тренировки знаний столицы ↔ страна.\n"
@@ -129,13 +133,18 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id, chunks[-1], reply_markup=list_result_kb())
 
     elif data == "menu:coop":
-        from .handlers_coop import cmd_coop_capitals
+        if update.effective_user.id == ADMIN_ID:
+            await q.edit_message_text(
+                "Доступен тестовый матч.", reply_markup=coop_admin_kb()
+            )
+        else:
+            from .handlers_coop import cmd_coop_capitals
 
-        await cmd_coop_capitals(update, context)
-        try:
-            await q.message.delete()
-        except Exception:
-            pass
+            await cmd_coop_capitals(update, context)
+            try:
+                await q.message.delete()
+            except Exception:
+                pass
 
     elif data == "menu:main":
         await q.edit_message_text(WELCOME, reply_markup=main_menu_kb())
