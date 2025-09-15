@@ -15,7 +15,7 @@ from httpx import HTTPError
 
 from app import DATA
 from .state import CoopSession
-from .questions import pick_question
+from .questions import pick_question, make_card_question
 from .keyboards import (
     coop_answer_kb,
     coop_invite_kb,
@@ -49,6 +49,106 @@ def _find_user_session(
     return None, None
 
 
+async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
+    """Initialise cooperative game questions queue and ask the first pair."""
+
+    countries = DATA.countries(session.continent_filter)
+    if session.continent_filter is None:
+        countries = random.sample(countries, k=min(30, len(countries)))
+    session.remaining_pairs = []
+    for country in countries:
+        mode = random.choice(["country_to_capital", "capital_to_country"])
+        item = country if mode == "country_to_capital" else DATA.capital_by_country[country]
+        q = make_card_question(DATA, item, mode, session.continent_filter)
+        session.remaining_pairs.append(q)
+    random.shuffle(session.remaining_pairs)
+    session.current_pair = None
+    session.turn_index = 0
+    session.player_stats = {pid: 0 for pid in session.players}
+    await _ask_current_pair(context, session)
+
+
+async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
+    """Send the current pair question to the active player and notify others."""
+
+    if not session.current_pair:
+        if not session.remaining_pairs:
+            await _finish_game(context, session)
+            return
+        session.current_pair = session.remaining_pairs[0]
+
+    current_player = session.players[session.turn_index]
+    chat_id = session.player_chats.get(current_player)
+    if chat_id:
+        try:
+            msg = await context.bot.send_message(
+                chat_id,
+                f"Ход {session.player_names.get(current_player, 'Игрок')}\n{session.current_pair['prompt']}",
+                reply_markup=coop_answer_kb(
+                    session.session_id, current_player, session.current_pair["options"]
+                ),
+                parse_mode="HTML",
+            )
+            session.question_message_ids[current_player] = msg.message_id
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send coop question: %s", e)
+
+    for idx, pid in enumerate(session.players):
+        if pid == current_player:
+            continue
+        other_chat = session.player_chats.get(pid)
+        if not other_chat:
+            continue
+        try:
+            await context.bot.send_message(
+                other_chat,
+                f"Ход игрока {session.player_names.get(current_player, str(current_player))}",
+            )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to notify waiting player: %s", e)
+
+
+async def _next_turn(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession, correct: bool
+) -> None:
+    """Advance to next player's turn, keeping or removing the current pair."""
+
+    current_player = session.players[session.turn_index]
+    if correct:
+        session.player_stats[current_player] = session.player_stats.get(current_player, 0) + 1
+        if session.remaining_pairs:
+            session.remaining_pairs.pop(0)
+        session.current_pair = None
+
+    session.turn_index = (session.turn_index + 1) % len(session.players)
+
+    if session.remaining_pairs:
+        await _ask_current_pair(context, session)
+    else:
+        await _finish_game(context, session)
+
+
+async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
+    """Send final stats to all players and remove session."""
+
+    sessions = _get_sessions(context)
+    sessions.pop(session.session_id, None)
+    text_lines = ["Игра завершена."]
+    for pid in session.players:
+        name = session.player_names.get(pid, f"Игрок {pid}")
+        score = session.player_stats.get(pid, 0)
+        text_lines.append(f"{name}: {score}")
+    text = "\n".join(text_lines)
+    for pid in session.players:
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
+        try:
+            await context.bot.send_message(chat_id, text)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send coop final result: %s", e)
+
+
 async def _start_round(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
     """Generate question and send it to the current player only."""
 
@@ -57,9 +157,9 @@ async def _start_round(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     session.answers.clear()
     session.answer_options.clear()
     session.question_message_ids.clear()
-    session.current_turn_index = 0
+    session.turn_index = 0
 
-    current_player = session.players[session.current_turn_index]
+    current_player = session.players[session.turn_index]
     current_chat = session.player_chats.get(current_player)
     if current_chat:
         try:
@@ -80,7 +180,7 @@ async def _start_round(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
 
     waiting_text = "Ожидаем ход другого игрока."
     for idx, pid in enumerate(session.players):
-        if idx == session.current_turn_index:
+        if idx == session.turn_index:
             continue
         chat_id = session.player_chats.get(pid)
         if not chat_id:
@@ -584,7 +684,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if player_id != update.effective_user.id:
         await q.answer("Не ваша кнопка", show_alert=True)
         return
-    if player_id != session.players[session.current_turn_index]:
+    if player_id != session.players[session.turn_index]:
         await q.answer("Сейчас не ваш ход", show_alert=True)
         return
     if player_id in session.answers:
@@ -604,9 +704,9 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except (TelegramError, HTTPError) as e:
         logger.warning("Failed to clear coop buttons: %s", e)
 
-    session.current_turn_index += 1
-    if session.current_turn_index < len(session.players):
-        next_pid = session.players[session.current_turn_index]
+    session.turn_index += 1
+    if session.turn_index < len(session.players):
+        next_pid = session.players[session.turn_index]
         next_chat = session.player_chats.get(next_pid)
         if session.dummy_mode and not next_chat:
             await _dummy_move(context, session)
