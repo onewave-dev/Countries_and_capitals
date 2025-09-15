@@ -107,11 +107,79 @@ def test_coop_flow_steps(monkeypatch):
     assert calls == ["s1"]
 
 
+def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("ADMIN_ID", "5")
+    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    hco.ADMIN_ID = 5
+    hco.DUMMY_ACCURACY = 1.0
+
+    monkeypatch.setattr(hco.DATA, "countries", lambda continent: ["France"])
+
+    def fake_make_card_question(data, item, mode, continent):
+        return {
+            "prompt": "Q?",
+            "options": ["A", "B", "C", "D"],
+            "correct": "A",
+            "country": "France",
+            "capital": "A",
+            "type": "country_to_capital",
+        }
+
+    monkeypatch.setattr(hco, "make_card_question", fake_make_card_question)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={"continent": "Азия"},
+        application=SimpleNamespace(bot_data={}),
+    )
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=5, full_name="Админ"),
+        effective_chat=SimpleNamespace(id=77, type="private"),
+        message=SimpleNamespace(text="/coop_test"),
+    )
+
+    asyncio.run(hco.cmd_coop_test(update, context))
+    sessions = context.application.bot_data.get("coop_sessions", {})
+    assert len(sessions) == 1
+    session = next(iter(sessions.values()))
+    assert session.players == [5, hco.DUMMY_PLAYER_ID]
+    assert session.player_chats == {5: 77}
+    assert session.player_names[5] == "Админ"
+    assert session.player_names[hco.DUMMY_PLAYER_ID] == "Бот-помощник"
+    assert session.continent_filter == "Азия"
+    assert "coop_pending" not in context.user_data
+
+    # Question sent immediately to the human player
+    assert bot.sent[0][0] == 77
+    assert "Ход" in bot.sent[0][1]
+
+    # Simulate a wrong human answer -> dummy should answer automatically and finish the game
+    asyncio.run(hco._next_turn(context, session, False))
+    # Dummy summary is the penultimate message; final results come last
+    assert len(bot.sent) >= 3
+    assert "Бот-помощник отвечает верно" in bot.sent[-2][1]
+    assert bot.sent[-2][0] == 77
+    assert all(chat_id is not None for chat_id, *_ in bot.sent)
+    assert session.player_stats[hco.DUMMY_PLAYER_ID] >= 1
+
+
 def test_bot_accuracy(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
     import importlib
     hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
     hco.ADMIN_ID = 1
+    hco.DUMMY_ACCURACY = 0.0
 
     class DummyBot:
         def __init__(self):
