@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import random
 import uuid
@@ -208,9 +209,16 @@ async def _next_turn(
         session.turn_index = 0
 
     if session.remaining_pairs:
-        await _ask_current_pair(context, session)
-    else:
-        await _finish_game(context, session)
+        logger.debug(
+            "Delaying next cooperative question for session %s by 2 seconds",
+            session.session_id,
+        )
+        await asyncio.sleep(2)
+        if session.remaining_pairs:
+            await _ask_current_pair(context, session)
+            return
+
+    await _finish_game(context, session)
 
 
 async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
