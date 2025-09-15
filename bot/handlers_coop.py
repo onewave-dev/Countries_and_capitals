@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
+DUMMY_PLAYER_ID = -1
+try:
+    DUMMY_ACCURACY = float(os.getenv("DUMMY_ACCURACY", "0.7"))
+except ValueError:
+    DUMMY_ACCURACY = 0.7
+
 # Probability of the bot answering correctly depending on the difficulty.
 ACCURACY = {"easy": 0.5, "medium": 0.7, "hard": 0.9}
 
@@ -69,6 +75,49 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     await _ask_current_pair(context, session)
 
 
+async def _auto_answer_dummy(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession
+) -> None:
+    """Automatically answer for the dummy teammate and advance the game."""
+
+    if not session.current_pair:
+        return
+
+    should_answer_correct = random.random() < DUMMY_ACCURACY
+    correct_option = session.current_pair["correct"]
+    if should_answer_correct:
+        chosen_option = correct_option
+    else:
+        other_options = [
+            option for option in session.current_pair["options"] if option != correct_option
+        ]
+        if other_options:
+            chosen_option = random.choice(other_options)
+        else:
+            chosen_option = correct_option
+            should_answer_correct = True
+
+    name = session.player_names.get(DUMMY_PLAYER_ID, "Бот-помощник")
+    if should_answer_correct:
+        text = (
+            f"{name} отвечает верно!\n"
+            f"Правильный ответ: <b>{_format_correct(session.current_pair)}</b>"
+        )
+    else:
+        text = f"{name} отвечает неверно ({chosen_option})."
+
+    for pid in session.players:
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
+        try:
+            await context.bot.send_message(chat_id, text, parse_mode="HTML")
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send dummy answer summary: %s", e)
+
+    await _next_turn(context, session, should_answer_correct)
+
+
 async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
     """Send the current pair question to the active player and notify others."""
 
@@ -79,6 +128,9 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
         session.current_pair = session.remaining_pairs[0]
 
     current_player = session.players[session.turn_index]
+    if current_player == DUMMY_PLAYER_ID:
+        await _auto_answer_dummy(context, session)
+        return
     chat_id = session.player_chats.get(current_player)
     if chat_id:
         try:
@@ -308,9 +360,20 @@ async def cmd_coop_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     sessions = _get_sessions(context)
     session_id = uuid.uuid4().hex[:8]
     session = CoopSession(session_id=session_id, difficulty="medium")
-    session.players = [update.effective_user.id]
-    session.player_chats = {update.effective_user.id: update.effective_chat.id}
-    session.player_names = {update.effective_user.id: "Тестер"}
+    human_id = update.effective_user.id
+    human_chat_id = getattr(update.effective_chat, "id", None)
+    session.players = [human_id, DUMMY_PLAYER_ID]
+    if human_chat_id is not None:
+        session.player_chats = {human_id: human_chat_id}
+    session.player_names = {
+        human_id: getattr(update.effective_user, "full_name", None) or "Тестер",
+        DUMMY_PLAYER_ID: "Бот-помощник",
+    }
+    selected_continent = context.user_data.get("continent")
+    if selected_continent:
+        session.continent_filter = (
+            None if selected_continent == "Весь мир" else selected_continent
+        )
     sessions[session_id] = session
 
     await _start_game(context, session)
