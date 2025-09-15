@@ -43,12 +43,13 @@ def test_question_stays_on_wrong_answer(monkeypatch):
 
 def test_turn_order_cycles(monkeypatch):
     hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+    monkeypatch.setattr(hco.random, "random", lambda: 1.0)
     asyncio.run(hco._start_game(context, session))
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 1
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 0
-    chats = [bot.sent[i][0] for i in range(0, len(bot.sent), 2)]
+    chats = [chat for chat, text in bot.sent if text.startswith("Ход") and "\n" in text]
     assert chats[:3] == [1, 2, 1]
 
 

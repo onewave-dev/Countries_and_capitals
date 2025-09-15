@@ -83,7 +83,7 @@ def test_coop_continent_selection(monkeypatch):
     assert context.user_data["continent"] == "Азия"
 
 
-def test_dummy_player_cycle(monkeypatch):
+def test_bot_accuracy(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
     import importlib
     hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
@@ -97,67 +97,31 @@ def test_dummy_player_cycle(monkeypatch):
             self.sent.append((chat_id, text))
             return SimpleNamespace(message_id=len(self.sent))
 
-    class DummyQueue:
-        def run_once(self, callback, delay, data=None, name=None):
-            return SimpleNamespace(schedule_removal=lambda: None)
-
     bot = DummyBot()
-    context = SimpleNamespace(
-        bot=bot,
-        user_data={},
-        application=SimpleNamespace(bot_data={}, job_queue=DummyQueue()),
-    )
+    context = SimpleNamespace(bot=bot, user_data={}, application=SimpleNamespace(bot_data={}))
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=1),
         effective_chat=SimpleNamespace(id=1, type="private"),
-        message=None,
+        message=SimpleNamespace(text="/coop_test"),
     )
 
-    monkeypatch.setattr(hco, "get_flag_image_path", lambda c: None)
-
-    def fake_question(data, continent, mode):
+    # deterministic question
+    def fake_make_card_question(data, item, mode, continent):
         return {
             "prompt": "Q?",
-            "options": ["A", "B", "C", "D"],
+            "options": ["A", "B"],
             "correct": "A",
             "country": "X",
             "capital": "A",
             "type": "country_to_capital",
         }
 
-    monkeypatch.setattr(hco, "pick_question", fake_question)
-    monkeypatch.setattr(hco.random, "random", lambda: 1.0)
-    monkeypatch.setattr(hco.random, "uniform", lambda a, b: a)
+    monkeypatch.setattr(hco, "make_card_question", fake_make_card_question)
+    monkeypatch.setattr(hco.random, "random", lambda: 0.0)
 
     asyncio.run(hco.cmd_coop_test(update, context))
     session = next(iter(context.application.bot_data["coop_sessions"].values()))
 
-    for _ in range(3):
-        qdata = f"coop:ans:{session.session_id}:1:1"
-        cq = SimpleNamespace(data=qdata)
-
-        async def answer(*args, **kwargs):
-            pass
-
-        async def edit_message_reply_markup(*args, **kwargs):
-            pass
-
-        cq.answer = answer
-        cq.edit_message_reply_markup = edit_message_reply_markup
-        cb_update = SimpleNamespace(callback_query=cq, effective_user=SimpleNamespace(id=1))
-        asyncio.run(hco.cb_coop(cb_update, context))
-        bot_ctx = SimpleNamespace(
-            job=SimpleNamespace(data={"session_id": session.session_id}),
-            application=context.application,
-            bot=bot,
-        )
-        asyncio.run(hco._bot_move(bot_ctx))
-        session = context.application.bot_data.get("coop_sessions", {}).get(session.session_id)
-        if session:
-            asyncio.run(hco._start_round(context, session))
-
-    results = [msg for _, msg in bot.sent if "Игрок 2" in msg]
-    assert len(results) >= 3
-    assert "Игрок 2" in results[0] and "✅" in results[0]
-    assert "Игрок 2" in results[1] and "✅" in results[1]
-    assert "Игрок 2" in results[2] and "❌" in results[2]
+    # Player answers wrong so that the bot takes a turn
+    asyncio.run(hco._next_turn(context, session, False))
+    assert session.bot_stats == 1

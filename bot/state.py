@@ -136,22 +136,12 @@ class CoopSession:
     continent_filter: str | None = None
     mode: str = "mixed"
     difficulty: str = ""
-    total_rounds: int = 0
-    current_round: int = 0
-    team_score: int = 0
-    bot_score: int = 0
-    bot_think_delay: float = 2.0
-    answers: Dict[int, bool] = field(default_factory=dict)
-    answer_options: Dict[int, str] = field(default_factory=dict)
     question_message_ids: Dict[int, int] = field(default_factory=dict)
-    current_question: Dict[str, Any] | None = None
-    jobs: Dict[str, Job] = field(default_factory=dict)
-    dummy_mode: bool = False
-    dummy_counter: int = 0
     remaining_pairs: List[Dict[str, Any]] = field(default_factory=list)
     current_pair: Dict[str, Any] | None = None
     turn_index: int = 0
     player_stats: Dict[int, int] = field(default_factory=dict)
+    bot_stats: int = 0
 
 
 @dataclass
