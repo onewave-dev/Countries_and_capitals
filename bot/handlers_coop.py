@@ -20,6 +20,7 @@ from .keyboards import (
     coop_answer_kb,
     coop_invite_kb,
     coop_difficulty_kb,
+    coop_continent_kb,
 )
 
 logger = logging.getLogger(__name__)
@@ -349,15 +350,15 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             context.user_data.pop("coop_pending", None)
             await update.message.reply_text(
-                "Имя сохранено. Выберите сложность соперника.",
-                reply_markup=coop_difficulty_kb(session_id, user_id),
+                "Имя сохранено. Выберите континент.",
+                reply_markup=coop_continent_kb(session_id),
             )
             first_player = session.players[0]
             first_chat = session.player_chats[first_player]
             await context.bot.send_message(
                 first_chat,
-                "Второй игрок присоединился. Выберите сложность соперника.",
-                reply_markup=coop_difficulty_kb(session_id, first_player),
+                "Второй игрок присоединился. Выберите континент.",
+                reply_markup=coop_continent_kb(session_id),
             )
 
 
@@ -368,8 +369,45 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     parts = q.data.split(":")
     sessions = _get_sessions(context)
 
+    if len(parts) >= 2 and parts[1] == "cont":
+        session_id = parts[2]
+        continent = parts[3]
+        session = sessions.get(session_id)
+        if not session:
+            await q.answer()
+            return
+        if update.effective_user.id not in session.players:
+            await q.answer("Не ваша кнопка", show_alert=True)
+            return
+        if session.continent_filter is not None:
+            await q.answer("Континент уже выбран", show_alert=True)
+            try:
+                await q.edit_message_reply_markup(None)
+            except Exception:
+                pass
+            return
+        session.continent_filter = None if continent == "Весь мир" else continent
+        await q.answer()
+        try:
+            await q.edit_message_reply_markup(None)
+        except Exception:
+            pass
+        for pid in session.players:
+            chat_id = session.player_chats.get(pid)
+            if not chat_id:
+                continue
+            try:
+                await context.bot.send_message(
+                    chat_id,
+                    "Континент выбран. Выберите сложность соперника.",
+                    reply_markup=coop_difficulty_kb(session_id, pid),
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send difficulty selection: %s", e)
+        return
+
     if len(parts) == 2:
-        # coop:<continent>
+        # coop:<continent> (admin quick start)
         continent = parts[1]
         await q.answer()
         context.user_data["continent"] = continent
