@@ -104,5 +104,6 @@ def make_card_question(
         "capital": capital,
         "prompt": prompt,
         "answer": answer,
+        "correct": answer,
         "options": options,
     }

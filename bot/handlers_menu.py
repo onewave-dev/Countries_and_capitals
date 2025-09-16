@@ -72,9 +72,6 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from .handlers_coop import cmd_coop_capitals
 
         await q.edit_message_text("🤝 Дуэт против Бота")
-        update.effective_chat = q.message.chat
-        update.effective_user = q.from_user
-        update.message = None
         await cmd_coop_capitals(update, context)
     elif data == "menu:coop_admin":
         context.user_data["coop_admin"] = True
