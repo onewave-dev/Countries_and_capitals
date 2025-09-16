@@ -222,7 +222,12 @@ def test_score_broadcast_includes_team_total(monkeypatch):
     asyncio.run(hco._next_turn(context, session, True))
 
     score_messages = [text for _, text, *_ in bot.sent if text and text.startswith("Текущий счёт:")]
-    expected = "Текущий счёт: A и B — 1, Бот — 0"
+    players_total = sum(session.player_stats.values())
+    expected_remaining = max(session.total_pairs - (players_total + session.bot_stats), 0)
+    expected = (
+        f"Текущий счёт: A и B — {players_total}, Бот — {session.bot_stats}. "
+        f"Осталось {expected_remaining} вопросов."
+    )
     assert expected in score_messages
     assert not bot.photos
 
@@ -265,7 +270,7 @@ def test_correct_answer_sends_flag_photo(monkeypatch, tmp_path):
     first_entry = next(e for e in bot.sent if e[1] and "Франция" in e[1])
     caption = first_entry[1]
     markup = first_entry[2]
-    assert "Правильных ответов: 1 из 1" in caption
+    assert "Правильных ответов" not in caption
     assert "Интересный факт:" in caption
     assert any(
         btn.callback_data == f"coop:more_fact:{session.session_id}"
