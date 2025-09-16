@@ -56,6 +56,61 @@ def _setup_session(monkeypatch, continent=None):
     return hco, session, context, bot, calls
 
 
+def test_join_callback_adds_player(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # ensure application is initialised before importing handlers
+
+    hco = importlib.reload(importlib.import_module("bot.handlers_coop"))
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1]
+    session.player_chats = {1: 100}
+    host_chat_data = {"sessions": {"s1": session}}
+    join_chat_data = {}
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={},
+        chat_data=join_chat_data,
+        application=SimpleNamespace(chat_data={100: host_chat_data, 200: join_chat_data}),
+    )
+
+    callback = SimpleNamespace(
+        data="coop:join:s1",
+        answer=AsyncMock(),
+        edit_message_reply_markup=AsyncMock(),
+        message=SimpleNamespace(
+            chat=SimpleNamespace(id=200, type="private"),
+            message_id=77,
+        ),
+    )
+    update = SimpleNamespace(
+        callback_query=callback,
+        effective_user=SimpleNamespace(id=2),
+        effective_chat=callback.message.chat,
+    )
+
+    asyncio.run(hco.cb_coop(update, context))
+
+    assert session.players == [1, 2]
+    assert session.player_chats[2] == 200
+    assert context.user_data["coop_pending"] == {"session_id": "s1", "stage": "name"}
+    assert any(chat_id == 200 and "Введите ваше имя" in text for chat_id, text, _ in bot.sent)
+    assert any(
+        chat_id == 100 and "подключился" in (text or "") for chat_id, text, _ in bot.sent
+    )
+
+
 def test_continent_prompt_after_names(monkeypatch):
     import importlib
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
