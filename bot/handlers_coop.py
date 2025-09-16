@@ -810,34 +810,39 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not message:
             return
 
+        user_shared = getattr(message, "user_shared", None)
+        shared_user_id = getattr(user_shared, "user_id", None) if user_shared else None
         contact = getattr(message, "contact", None)
-        if contact:
-            contact_user_id = getattr(contact, "user_id", None)
-            if contact_user_id:
-                inviter_name = session.player_names.get(user_id, "Ваш друг")
-                invite_text = (
-                    f"{inviter_name} приглашает вас присоединиться к кооперативной игре "
-                    "«Столицы мира». Нажмите кнопку, чтобы вступить."
+        contact_user_id = getattr(contact, "user_id", None) if contact else None
+        target_user_id = shared_user_id or contact_user_id
+
+        if target_user_id:
+            inviter_name = session.player_names.get(user_id, "Ваш друг")
+            invite_text = (
+                f"{inviter_name} приглашает вас присоединиться к кооперативной игре "
+                "«Столицы мира». Нажмите кнопку, чтобы вступить."
+            )
+            try:
+                await context.bot.send_message(
+                    target_user_id,
+                    invite_text,
+                    reply_markup=coop_join_kb(session_id),
                 )
-                try:
-                    await context.bot.send_message(
-                        contact_user_id,
-                        invite_text,
-                        reply_markup=coop_join_kb(session_id),
-                    )
-                except (TelegramError, HTTPError) as e:
-                    logger.warning("Failed to deliver coop invite: %s", e)
-                    await message.reply_text(
-                        "Не удалось отправить приглашение. Отправьте ссылку вручную.",
-                    )
-                else:
-                    await message.reply_text(
-                        "Приглашение отправлено. Как только второй игрок присоединится, продолжим настройку матча.",
-                    )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to deliver coop invite: %s", e)
+                await message.reply_text(
+                    "Не удалось отправить приглашение. Отправьте ссылку вручную.",
+                )
             else:
                 await message.reply_text(
-                    "У этого контакта нет Telegram-аккаунта. Передайте ссылку вручную.",
+                    "Приглашение отправлено. Как только второй игрок присоединится, продолжим настройку матча.",
                 )
+            return
+
+        if (user_shared and not shared_user_id) or (contact and not contact_user_id):
+            await message.reply_text(
+                "У этого контакта нет Telegram-аккаунта. Передайте ссылку вручную.",
+            )
             return
 
         text = (message.text or "").strip()
