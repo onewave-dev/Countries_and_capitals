@@ -26,13 +26,16 @@ class DummyBot:
 
     def __init__(self):
         self.sent: list[tuple[int, str | None, object | None]] = []
+        self.photos: list[tuple[int, str | None, object | None]] = []
 
     async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
         self.sent.append((chat_id, text, reply_markup))
         return SimpleNamespace(message_id=len(self.sent), text=text)
 
     async def send_photo(self, chat_id, photo, caption=None, reply_markup=None, parse_mode=None):
-        self.sent.append((chat_id, caption, reply_markup))
+        entry = (chat_id, caption, reply_markup)
+        self.sent.append(entry)
+        self.photos.append(entry)
         return SimpleNamespace(message_id=len(self.sent), caption=caption)
 
 
@@ -180,6 +183,8 @@ def test_coop_bot_move_mentions_capital(monkeypatch):
         )
         monkeypatch.setattr(hco.random, "random", lambda: 0.0)
         await hco._next_turn(context, session, False)
-        assert any("Оттава" in m[1] for m in bot.sent)
+        assert bot.photos
+        assert all("Канада" in caption for _, caption, _ in bot.photos)
+        assert any("Столица: Оттава" in caption for _, caption, _ in bot.photos)
 
     asyncio.run(run())
