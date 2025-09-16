@@ -182,12 +182,16 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     assert bot.sent[1][0] == 77
     assert "Ход" in bot.sent[1][1]
 
-    # Simulate a wrong human answer -> dummy should answer automatically and finish the game
+    # Simulate a wrong human answer -> dummy should answer automatically, then the opponent bot moves
     asyncio.run(hco._next_turn(context, session, False))
-    # Dummy summary is the penultimate message; final results come last
-    assert len(bot.sent) >= 3
-    assert "Бот-помощник отвечает верно" in bot.sent[-2][1]
-    assert bot.sent[-2][0] == 77
+    assert len(bot.sent) >= 4
+    dummy_messages = [msg for msg in bot.sent if "Бот-помощник отвечает верно" in msg[1]]
+    assert dummy_messages
+    assert all(chat_id == 77 for chat_id, *_ in dummy_messages)
+    opponent_messages = [msg for msg in bot.sent if msg[1].startswith("Бот отвечает")]
+    assert opponent_messages
+    assert opponent_messages[-1][0] == 77
+    assert bot.sent[-1][1].startswith("Игра завершена.")
     assert all(chat_id is not None for chat_id, *_ in bot.sent)
     assert session.player_stats[hco.DUMMY_PLAYER_ID] >= 1
 
@@ -245,3 +249,97 @@ def test_bot_accuracy(monkeypatch):
     # Player answers wrong so that the bot takes a turn
     asyncio.run(hco._next_turn(context, session, False))
     assert session.bot_stats == 1
+
+
+def test_bot_takes_turn_after_second_player(monkeypatch):
+    import importlib
+
+    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    monkeypatch.setattr(hco, "coop_answer_kb", lambda *args, **kwargs: None)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup, parse_mode))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1, 2]
+    session.player_chats = {1: 1, 2: 2}
+    session.player_names = {1: "Игрок 1", 2: "Игрок 2"}
+    session.player_stats = {1: 0, 2: 0}
+    session.bot_stats = 0
+    session.difficulty = "medium"
+    session.remaining_pairs = [
+        {
+            "prompt": "Q1",
+            "options": ["A1", "B1", "C1", "D1"],
+            "correct": "A1",
+            "country": "C1",
+            "capital": "A1",
+            "type": "country_to_capital",
+        },
+        {
+            "prompt": "Q2",
+            "options": ["A2", "B2", "C2", "D2"],
+            "correct": "A2",
+            "country": "C2",
+            "capital": "A2",
+            "type": "country_to_capital",
+        },
+        {
+            "prompt": "Q3",
+            "options": ["A3", "B3", "C3", "D3"],
+            "correct": "A3",
+            "country": "C3",
+            "capital": "A3",
+            "type": "country_to_capital",
+        },
+    ]
+
+    chat_data_1 = {"sessions": {"s1": session}}
+    chat_data_2 = {"sessions": {"s1": session}}
+    context = SimpleNamespace(
+        bot=bot,
+        chat_data=chat_data_1,
+        application=SimpleNamespace(chat_data={1: chat_data_1, 2: chat_data_2}),
+    )
+
+    async def fast_sleep(delay):
+        return None
+
+    monkeypatch.setattr(hco.asyncio, "sleep", fast_sleep)
+    monkeypatch.setattr(hco.random, "random", lambda: 0.0)
+
+    session.current_pair = None
+    session.turn_index = 0
+
+    asyncio.run(hco._ask_current_pair(context, session))
+    asyncio.run(hco._next_turn(context, session, True))
+
+    assert session.turn_index == 1
+    assert session.current_pair["prompt"] == "Q2"
+    assert session.player_stats == {1: 1, 2: 0}
+
+    asyncio.run(hco._next_turn(context, session, True))
+
+    bot_messages = [msg for msg in bot.sent if "Бот отвечает" in msg[1]]
+    assert len(bot_messages) == 2
+    assert all("верно" in text for _, text, *_ in bot_messages)
+    assert session.bot_stats == 1
+
+    question_messages = [
+        (chat_id, text)
+        for chat_id, text, *_ in bot.sent
+        if text.startswith("Ход") and "\n" in text
+    ]
+    assert question_messages[-1][0] == 1
+    assert "Q3" in question_messages[-1][1]
+
+    assert session.turn_index == 0
+    assert session.current_pair and session.current_pair["prompt"] == "Q3"
+    assert session.player_stats == {1: 1, 2: 1}
+    assert [pair["prompt"] for pair in session.remaining_pairs] == ["Q3"]
