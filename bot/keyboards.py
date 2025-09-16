@@ -1,5 +1,6 @@
 """Inline keyboards used across the bot menus."""
 
+from inspect import signature
 from textwrap import shorten
 from unicodedata import east_asian_width
 
@@ -25,6 +26,15 @@ KeyboardButtonRequestUser = getattr(
     "KeyboardButtonRequestUser",
     telegram.KeyboardButtonRequestUsers,
 )
+
+_COOP_INVITE_REQUEST_PARAM = (
+    "request_users"
+    if "request_users" in signature(KeyboardButton).parameters
+    else "request_user"
+)
+# Name of the ``KeyboardButton`` argument used to request users.  ``request_users``
+# is only available starting from python-telegram-bot v21, while older releases
+# expose the singular ``request_user``.
 
 
 def _visible_len(text: str) -> int:
@@ -292,14 +302,17 @@ def coop_admin_kb() -> InlineKeyboardMarkup:
 def coop_invite_kb() -> ReplyKeyboardMarkup:
     """Keyboard for inviting the second player."""
 
+    request_kwargs = {
+        _COOP_INVITE_REQUEST_PARAM: KeyboardButtonRequestUser(
+            request_id=COOP_INVITE_REQUEST_ID,
+            user_is_bot=False,
+        )
+    }
     rows = [
         [
             KeyboardButton(
                 "Пригласить из контактов",
-                request_users=KeyboardButtonRequestUser(
-                    request_id=COOP_INVITE_REQUEST_ID,
-                    user_is_bot=False,
-                ),
+                **request_kwargs,
             )
         ],
         [KeyboardButton("Создать ссылку")],
