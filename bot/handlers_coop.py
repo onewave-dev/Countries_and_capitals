@@ -269,15 +269,7 @@ async def _broadcast_correct_answer(
     capital = pair.get("capital", "")
 
     fact = get_static_fact(country)
-    if projected_total is None:
-        correct_total = sum(session.player_stats.values()) + session.bot_stats
-    else:
-        correct_total = projected_total
-    remaining = max(session.total_pairs - correct_total, 0)
-    header = (
-        f"✅ {name} отвечает верно. (Правильных ответов: {correct_total} из "
-        f"{session.total_pairs}. Осталось вопросов {remaining})"
-    )
+    header = f"✅ {name} отвечает верно."
     body = (
         f"{country}\nСтолица: {capital}\n\n{fact}\n\n"
         "Нажми кнопку ниже, чтобы узнать еще один факт"
@@ -342,7 +334,12 @@ async def _broadcast_score(
         team_label = ", ".join(player_names[:-1]) + f" и {player_names[-1]}"
 
     players_total = sum(session.player_stats.values())
-    text = f"Текущий счёт: {team_label} — {players_total}, Бот — {session.bot_stats}"
+    answered_total = players_total + session.bot_stats
+    remaining = max(session.total_pairs - answered_total, 0)
+    text = (
+        f"Текущий счёт: {team_label} — {players_total}, Бот — {session.bot_stats}. "
+        f"Осталось {remaining} вопросов."
+    )
 
     for pid in session.players:
         chat_id = session.player_chats.get(pid)

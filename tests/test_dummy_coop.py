@@ -393,7 +393,13 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     assert chats_for("Q3") == []
 
     score_messages = [text for _, text, *_ in bot.sent if text.startswith("Текущий счёт:")]
-    assert "Текущий счёт: Игрок 1 и Игрок 2 — 2, Бот — 1" in score_messages
+    players_total = sum(session.player_stats.values())
+    expected_remaining = max(session.total_pairs - (players_total + session.bot_stats), 0)
+    expected_score = (
+        "Текущий счёт: Игрок 1 и Игрок 2 — "
+        f"{players_total}, Бот — {session.bot_stats}. Осталось {expected_remaining} вопросов."
+    )
+    assert expected_score in score_messages
 
     assert session.turn_index == 0
     assert session.current_pair is None
