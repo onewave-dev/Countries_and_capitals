@@ -2,6 +2,8 @@
 
 from textwrap import shorten
 from unicodedata import east_asian_width
+
+import telegram
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -16,6 +18,13 @@ LONG_OPTION = 15
 SECTION_WIDTH = 36
 LINE_CHAR = "─"
 SPACER = LINE_CHAR * 12
+COOP_INVITE_REQUEST_ID = 1001
+
+KeyboardButtonRequestUser = getattr(
+    telegram,
+    "KeyboardButtonRequestUser",
+    telegram.KeyboardButtonRequestUsers,
+)
 
 
 def _visible_len(text: str) -> int:
@@ -284,7 +293,15 @@ def coop_invite_kb() -> ReplyKeyboardMarkup:
     """Keyboard for inviting the second player."""
 
     rows = [
-        [KeyboardButton("Пригласить из контактов", request_contact=True)],
+        [
+            KeyboardButton(
+                "Пригласить из контактов",
+                request_user=KeyboardButtonRequestUser(
+                    request_id=COOP_INVITE_REQUEST_ID,
+                    user_is_bot=False,
+                ),
+            )
+        ],
         [KeyboardButton("Создать ссылку")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=True)
