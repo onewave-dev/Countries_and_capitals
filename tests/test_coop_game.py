@@ -1,6 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from html import escape
 
 
 def _setup_session(monkeypatch, continent=None):
@@ -221,12 +222,19 @@ def test_score_broadcast_includes_team_total(monkeypatch):
     asyncio.run(hco._start_game(context, session))
     asyncio.run(hco._next_turn(context, session, True))
 
-    score_messages = [text for _, text, *_ in bot.sent if text and text.startswith("Текущий счёт:")]
+    score_messages = [
+        text
+        for _, text, *_ in bot.sent
+        if text and text.startswith("📊 <b>Текущий счёт</b>")
+    ]
     players_total = sum(session.player_stats.values())
     expected_remaining = max(session.total_pairs - (players_total + session.bot_stats), 0)
+    team_label = hco._format_team_label(session)
     expected = (
-        f"Текущий счёт: A и B — {players_total}, Бот — {session.bot_stats}. "
-        f"Осталось {expected_remaining} вопросов."
+        "📊 <b>Текущий счёт</b>\n"
+        f"🤝 <b>Команда</b> ({escape(team_label)}) — <b>{players_total}</b>\n"
+        f"🤖 <b>Бот-противник</b> — <b>{session.bot_stats}</b>\n"
+        f"{hco._format_remaining_questions_line(expected_remaining)}"
     )
     assert expected in score_messages
     assert not bot.photos

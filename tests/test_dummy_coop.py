@@ -1,5 +1,6 @@
 import asyncio
 from types import SimpleNamespace
+from html import escape
 
 
 def test_admin_button_visible_only_for_admin(monkeypatch):
@@ -215,7 +216,10 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
         entry for entry in bot.photos if entry[1] and "Бот отвечает верно" in entry[1]
     ]
     assert not opponent_photos
-    assert bot.sent[-1][1].startswith("Игра завершена.")
+    final_text = bot.sent[-1][1]
+    assert final_text.startswith("🏁 <b>Игра завершена!</b>")
+    assert "🤝 <b>Команда</b> (" in final_text
+    assert "🤖 <b>Бот-противник</b> — <b>" in final_text
     assert all(chat_id is not None for chat_id, *_ in bot.sent)
     assert session.player_stats[hco.DUMMY_PLAYER_ID] >= 1
     assert not sessions
@@ -392,12 +396,19 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     assert chats_for("Q2") == [2, 1]
     assert chats_for("Q3") == []
 
-    score_messages = [text for _, text, *_ in bot.sent if text.startswith("Текущий счёт:")]
+    score_messages = [
+        text
+        for _, text, *_ in bot.sent
+        if text and text.startswith("📊 <b>Текущий счёт</b>")
+    ]
     players_total = sum(session.player_stats.values())
     expected_remaining = max(session.total_pairs - (players_total + session.bot_stats), 0)
+    team_label = hco._format_team_label(session)
     expected_score = (
-        "Текущий счёт: Игрок 1 и Игрок 2 — "
-        f"{players_total}, Бот — {session.bot_stats}. Осталось {expected_remaining} вопросов."
+        "📊 <b>Текущий счёт</b>\n"
+        f"🤝 <b>Команда</b> ({escape(team_label)}) — <b>{players_total}</b>\n"
+        f"🤖 <b>Бот-противник</b> — <b>{session.bot_stats}</b>\n"
+        f"{hco._format_remaining_questions_line(expected_remaining)}"
     )
     assert expected_score in score_messages
 
