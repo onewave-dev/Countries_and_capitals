@@ -95,6 +95,53 @@ def test_continent_prompt_after_names(monkeypatch):
     assert any("Выберите континент" in t for t in texts)
 
 
+def test_preselected_continent_skips_prompt(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # ensure application is initialised before importing handlers
+
+    hco = importlib.reload(importlib.import_module("bot.handlers_coop"))
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1, 2]
+    session.player_chats = {1: 1, 2: 2}
+    session.continent_filter = "Европа"
+    session.continent_label = "Европа"
+    chat_data_1 = {"sessions": {"s1": session}}
+    chat_data_2 = {"sessions": {"s1": session}}
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={"coop_pending": {"session_id": "s1", "stage": "name"}},
+        chat_data=chat_data_2,
+        application=SimpleNamespace(chat_data={1: chat_data_1, 2: chat_data_2}),
+    )
+
+    async def reply_text(text, reply_markup=None):
+        bot.sent.append((2, text, reply_markup))
+        return SimpleNamespace(message_id=len(bot.sent))
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=2),
+        message=SimpleNamespace(text="B", reply_text=reply_text),
+    )
+
+    asyncio.run(hco.msg_coop(update, context))
+
+    texts = [t for _, t, _ in bot.sent]
+    assert any("Выберите сложность" in t for t in texts)
+    assert all("Выберите континент" not in t for t in texts)
+
+
 def test_question_stays_on_wrong_answer(monkeypatch):
     hco, session, context, bot, calls = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))
