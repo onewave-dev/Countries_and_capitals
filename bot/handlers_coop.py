@@ -958,6 +958,109 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await q.answer()
         return
 
+    if action == "join":
+        if len(parts) < 3:
+            await q.answer()
+            return
+        session_id = parts[2]
+        session = get_session(session_id)
+        if not session:
+            await q.answer()
+            try:
+                await q.edit_message_reply_markup(None)
+            except Exception:
+                pass
+            chat = getattr(update, "effective_chat", None) or getattr(q.message, "chat", None)
+            if chat:
+                try:
+                    await context.bot.send_message(chat.id, "Матч не найден")
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to notify missing coop session: %s", e)
+            return
+
+        chat = getattr(update, "effective_chat", None) or getattr(q.message, "chat", None)
+        chat_type = getattr(chat, "type", None)
+        if chat_type != "private":
+            await q.answer()
+            try:
+                await q.edit_message_reply_markup(None)
+            except Exception:
+                pass
+            if chat:
+                try:
+                    await context.bot.send_message(
+                        chat.id,
+                        "Присоединиться к матчу можно только в личке.",
+                    )
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to notify coop join chat restriction: %s", e)
+            return
+
+        user_id = update.effective_user.id
+        if user_id in session.players:
+            await q.answer()
+            try:
+                await q.edit_message_reply_markup(None)
+            except Exception:
+                pass
+            if chat:
+                try:
+                    await context.bot.send_message(
+                        chat.id, "Вы уже участвуете в этом матче"
+                    )
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to notify coop duplicate join: %s", e)
+            return
+
+        if len(session.players) >= 2:
+            await q.answer()
+            try:
+                await q.edit_message_reply_markup(None)
+            except Exception:
+                pass
+            if chat:
+                try:
+                    await context.bot.send_message(
+                        chat.id, "В матче уже хватает игроков"
+                    )
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to notify coop full session: %s", e)
+            return
+
+        session.players.append(user_id)
+        if chat:
+            session.player_chats[user_id] = chat.id
+        context.user_data["coop_pending"] = {"session_id": session_id, "stage": "name"}
+
+        await q.answer()
+        try:
+            await q.edit_message_reply_markup(None)
+        except Exception:
+            pass
+
+        if chat:
+            try:
+                await context.bot.send_message(chat.id, "Введите ваше имя")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to prompt coop player name: %s", e)
+
+        host_id = session.players[0] if session.players else None
+        if (
+            host_id
+            and host_id != user_id
+            and host_id != DUMMY_PLAYER_ID
+        ):
+            host_chat_id = session.player_chats.get(host_id)
+            if host_chat_id:
+                try:
+                    await context.bot.send_message(
+                        host_chat_id,
+                        "Второй игрок подключился. Продолжайте настройку матча.",
+                    )
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to notify coop host about join: %s", e)
+        return
+
     if action == "diff":
         session_id = parts[2]
         player_id = int(parts[3])
