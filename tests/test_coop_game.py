@@ -5,11 +5,12 @@ from unittest.mock import AsyncMock
 
 def _setup_session(monkeypatch, continent=None):
     import importlib
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # noqa: F401  # Ensure DATA is initialised before reloading handlers
     import bot.handlers_coop as hco
     hco = importlib.reload(hco)
     monkeypatch.setattr(hco, "coop_answer_kb", lambda *args, **kwargs: None)
     monkeypatch.setattr(hco, "get_flag_image_path", lambda *_: None)
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     async def no_sleep(*args, **kwargs):
         pass
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
@@ -47,8 +48,25 @@ def _setup_session(monkeypatch, continent=None):
     return hco, session, context, bot
 
 
+def _group_question_messages(bot, expected_chats):
+    question_messages = [
+        (chat_id, text)
+        for chat_id, text in bot.sent
+        if isinstance(text, str) and text.startswith("Ход") and "\n" in text
+    ]
+    size = len(expected_chats)
+    assert size > 0
+    assert len(question_messages) % size == 0
+    groups: list[list[tuple[int, str]]] = []
+    for start in range(0, len(question_messages), size):
+        groups.append(question_messages[start : start + size])
+    return groups
+
+
 def test_continent_prompt_after_names(monkeypatch):
     import importlib
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # noqa: F401
     hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
 
     class DummyBot:
@@ -88,10 +106,24 @@ def test_continent_prompt_after_names(monkeypatch):
 def test_question_stays_on_wrong_answer(monkeypatch):
     hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))
-    first = bot.sent[2][1]
+    expected_chats = {
+        chat_id for chat_id in session.player_chats.values() if chat_id is not None
+    }
+    groups = _group_question_messages(bot, expected_chats)
+    assert len(groups) == 1
+    first_group = groups[0]
+    assert {chat for chat, _ in first_group} == expected_chats
+    assert len({text for _, text in first_group}) == 1
+    first_prompt = first_group[0][1].split("\n", 1)[1]
+    assert all(msg.split("\n", 1)[1] == first_prompt for _, msg in first_group)
     asyncio.run(hco._next_turn(context, session, False))
-    second = bot.sent[4][1]
-    assert first.split("\n", 1)[1] == second.split("\n", 1)[1]
+    groups = _group_question_messages(bot, expected_chats)
+    assert len(groups) == 2
+    second_group = groups[1]
+    assert {chat for chat, _ in second_group} == expected_chats
+    assert len({text for _, text in second_group}) == 1
+    second_prompt = second_group[0][1].split("\n", 1)[1]
+    assert second_prompt == first_prompt
     assert len(session.remaining_pairs) > 0
 
 
@@ -103,8 +135,18 @@ def test_turn_order_cycles(monkeypatch):
     assert session.turn_index == 1
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 0
-    chats = [chat for chat, text in bot.sent if text.startswith("Ход") and "\n" in text]
-    assert chats[:3] == [1, 2, 1]
+    expected_chats = {
+        chat_id for chat_id in session.player_chats.values() if chat_id is not None
+    }
+    groups = _group_question_messages(bot, expected_chats)
+    assert len(groups) == 3
+    for group in groups:
+        assert {chat for chat, _ in group} == expected_chats
+        assert len({text for _, text in group}) == 1
+    headers = [group[0][1].split("\n", 1)[0] for group in groups]
+    name_a = session.player_names.get(session.players[0], "Игрок")
+    name_b = session.player_names.get(session.players[1], "Игрок")
+    assert headers[:3] == [f"Ход {name_a}", f"Ход {name_b}", f"Ход {name_a}"]
 
 
 def test_world_mode_limit(monkeypatch):

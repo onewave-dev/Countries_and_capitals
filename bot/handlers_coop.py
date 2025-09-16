@@ -206,7 +206,7 @@ async def _auto_answer_dummy(
 
 
 async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
-    """Send the current pair question to the active player and notify others."""
+    """Send the current pair question to every participant."""
 
     if not session.current_pair:
         if not session.remaining_pairs:
@@ -215,38 +215,36 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
         session.current_pair = session.remaining_pairs[0]
 
     current_player = session.players[session.turn_index]
+    player_name = session.player_names.get(current_player, "Игрок")
+    question_text = f"Ход {player_name}\n{session.current_pair['prompt']}"
+
+    recipients = session.players
     if current_player == DUMMY_PLAYER_ID:
-        await _auto_answer_dummy(context, session)
-        return
-    chat_id = session.player_chats.get(current_player)
-    if chat_id:
+        recipients = [pid for pid in session.players if pid != DUMMY_PLAYER_ID]
+
+    for pid in recipients:
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
+        reply_markup = None
+        if pid == current_player and current_player != DUMMY_PLAYER_ID:
+            reply_markup = coop_answer_kb(
+                session.session_id, current_player, session.current_pair["options"]
+            )
         try:
             msg = await context.bot.send_message(
                 chat_id,
-                f"Ход {session.player_names.get(current_player, 'Игрок')}\n{session.current_pair['prompt']}",
-                reply_markup=coop_answer_kb(
-                    session.session_id, current_player, session.current_pair["options"]
-                ),
+                question_text,
+                reply_markup=reply_markup,
                 parse_mode="HTML",
             )
-            session.question_message_ids[current_player] = msg.message_id
+            if pid == current_player and current_player != DUMMY_PLAYER_ID:
+                session.question_message_ids[current_player] = msg.message_id
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send coop question: %s", e)
 
-    # Notify waiting players about whose turn it is.
-    for pid in session.players:
-        if pid == current_player:
-            continue
-        other_chat = session.player_chats.get(pid)
-        if not other_chat:
-            continue
-        try:
-            await context.bot.send_message(
-                other_chat,
-                f"Ход игрока {session.player_names.get(current_player, str(current_player))}…",
-            )
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to notify waiting player: %s", e)
+    if current_player == DUMMY_PLAYER_ID:
+        await _auto_answer_dummy(context, session)
 
 
 def _format_correct(pair: Dict[str, str]) -> str:

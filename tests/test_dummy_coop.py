@@ -1,12 +1,25 @@
 import asyncio
+import importlib
 from types import SimpleNamespace
+
+
+def _reload_menu(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # noqa: F401  # Ensure DATA is available for handlers relying on it
+    module = importlib.import_module("bot.handlers_menu")
+    return importlib.reload(module)
+
+
+def _reload_coop(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # noqa: F401  # Ensure DATA is available for handlers relying on it
+    module = importlib.import_module("bot.handlers_coop")
+    return importlib.reload(module)
 
 
 def test_admin_button_visible_only_for_admin(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
-    import importlib
-    hm = importlib.reload(__import__("bot.handlers_menu", fromlist=["*"]))
+    hm = _reload_menu(monkeypatch)
     hm.ADMIN_ID = 1
 
     class DummyBot:
@@ -41,9 +54,7 @@ def test_admin_button_visible_only_for_admin(monkeypatch):
 
 
 def test_coop_flow_steps(monkeypatch):
-    import importlib
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
-    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    hco = _reload_coop(monkeypatch)
     monkeypatch.setenv("ADMIN_ID", "99")
     hco.ADMIN_ID = 99
 
@@ -130,13 +141,11 @@ def test_coop_flow_steps(monkeypatch):
 
 
 def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
-    import importlib
     async def no_sleep(*args, **kwargs):
         pass
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     monkeypatch.setenv("ADMIN_ID", "5")
-    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    hco = _reload_coop(monkeypatch)
     hco.ADMIN_ID = 5
     hco.DUMMY_ACCURACY = 1.0
 
@@ -218,10 +227,8 @@ def test_bot_accuracy(monkeypatch):
     async def no_sleep(*args, **kwargs):
         pass
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     monkeypatch.setenv("ADMIN_ID", "1")
-    import importlib
-    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    hco = _reload_coop(monkeypatch)
     hco.ADMIN_ID = 1
     hco.DUMMY_ACCURACY = 0.0
 
@@ -281,9 +288,7 @@ def test_bot_accuracy(monkeypatch):
 
 
 def test_bot_takes_turn_after_second_player(monkeypatch):
-    import importlib
-
-    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    hco = _reload_coop(monkeypatch)
     monkeypatch.setattr(hco, "coop_answer_kb", lambda *args, **kwargs: None)
     monkeypatch.setattr(hco, "get_flag_image_path", lambda *_: None)
 
@@ -376,8 +381,11 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
         for chat_id, text, *_ in bot.sent
         if text.startswith("Ход") and "\n" in text
     ]
-    assert question_messages[-1][0] == 1
-    assert "Q3" in question_messages[-1][1]
+    expected_chats = {
+        chat_id for chat_id in session.player_chats.values() if chat_id is not None
+    }
+    q3_chats = {chat for chat, text in question_messages if "Q3" in text}
+    assert q3_chats == expected_chats
 
     score_messages = [text for _, text, *_ in bot.sent if text.startswith("Текущий счёт:")]
     assert "Текущий счёт: Игрок 1 и Игрок 2 — 2, Бот — 1" in score_messages
