@@ -50,9 +50,18 @@ def test_coop_flow_steps(monkeypatch):
     class DummyBot:
         def __init__(self):
             self.sent = []
+            self.photos = []
 
         async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
             self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+        async def send_photo(
+            self, chat_id, photo, caption=None, reply_markup=None, parse_mode=None
+        ):
+            entry = (chat_id, caption, reply_markup)
+            self.sent.append(entry)
+            self.photos.append(entry)
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
@@ -148,9 +157,18 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     class DummyBot:
         def __init__(self):
             self.sent = []
+            self.photos = []
 
         async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
             self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+        async def send_photo(
+            self, chat_id, photo, caption=None, reply_markup=None, parse_mode=None
+        ):
+            entry = (chat_id, caption, reply_markup)
+            self.sent.append(entry)
+            self.photos.append(entry)
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
@@ -185,12 +203,12 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     # Simulate a wrong human answer -> dummy should answer automatically, then the opponent bot moves
     asyncio.run(hco._next_turn(context, session, False))
     assert len(bot.sent) >= 4
-    dummy_messages = [msg for msg in bot.sent if "Бот-помощник отвечает верно" in msg[1]]
-    assert dummy_messages
-    assert all(chat_id == 77 for chat_id, *_ in dummy_messages)
-    opponent_messages = [msg for msg in bot.sent if msg[1].startswith("Бот отвечает")]
-    assert opponent_messages
-    assert opponent_messages[-1][0] == 77
+    dummy_photos = [entry for entry in bot.photos if entry[1] and "Бот-помощник отвечает верно" in entry[1]]
+    assert dummy_photos
+    assert all(chat_id == 77 for chat_id, *_ in dummy_photos)
+    opponent_photos = [entry for entry in bot.photos if entry[1] and entry[1].startswith("Бот отвечает")]
+    assert opponent_photos
+    assert opponent_photos[-1][0] == 77
     assert bot.sent[-1][1].startswith("Игра завершена.")
     assert all(chat_id is not None for chat_id, *_ in bot.sent)
     assert session.player_stats[hco.DUMMY_PLAYER_ID] >= 1
@@ -210,9 +228,18 @@ def test_bot_accuracy(monkeypatch):
     class DummyBot:
         def __init__(self):
             self.sent = []
+            self.photos = []
 
         async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
             self.sent.append((chat_id, text))
+            return SimpleNamespace(message_id=len(self.sent))
+
+        async def send_photo(
+            self, chat_id, photo, caption=None, reply_markup=None, parse_mode=None
+        ):
+            entry = (chat_id, caption)
+            self.sent.append(entry)
+            self.photos.append(entry)
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
@@ -242,6 +269,7 @@ def test_bot_accuracy(monkeypatch):
 
     monkeypatch.setattr(hco, "make_card_question", fake_make_card_question)
     monkeypatch.setattr(hco.random, "random", lambda: 0.0)
+    monkeypatch.setattr(hco, "get_flag_image_path", lambda *_: None)
 
     asyncio.run(hco.cmd_coop_test(update, context))
     session = next(iter(context.chat_data["sessions"].values()))
@@ -249,6 +277,7 @@ def test_bot_accuracy(monkeypatch):
     # Player answers wrong so that the bot takes a turn
     asyncio.run(hco._next_turn(context, session, False))
     assert session.bot_stats == 1
+    assert not bot.photos
 
 
 def test_bot_takes_turn_after_second_player(monkeypatch):
@@ -256,13 +285,23 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
 
     hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
     monkeypatch.setattr(hco, "coop_answer_kb", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hco, "get_flag_image_path", lambda *_: None)
 
     class DummyBot:
         def __init__(self):
             self.sent = []
+            self.photos = []
 
         async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
             self.sent.append((chat_id, text, reply_markup, parse_mode))
+            return SimpleNamespace(message_id=len(self.sent))
+
+        async def send_photo(
+            self, chat_id, photo, caption=None, reply_markup=None, parse_mode=None
+        ):
+            entry = (chat_id, caption, reply_markup, parse_mode)
+            self.sent.append(entry)
+            self.photos.append(entry)
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
@@ -330,6 +369,7 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     assert len(bot_messages) == 2
     assert all("верно" in text for _, text, *_ in bot_messages)
     assert session.bot_stats == 1
+    assert not bot.photos
 
     question_messages = [
         (chat_id, text)

@@ -7,6 +7,7 @@ import os
 import random
 import uuid
 import logging
+from io import BytesIO
 from typing import Dict, Tuple
 
 from telegram import Update, ReplyKeyboardRemove, Chat, User
@@ -23,6 +24,7 @@ from .keyboards import (
     coop_difficulty_kb,
     coop_continent_kb,
 )
+from .flags import get_flag_image_path
 
 logger = logging.getLogger(__name__)
 
@@ -187,21 +189,18 @@ async def _auto_answer_dummy(
 
     name = session.player_names.get(DUMMY_PLAYER_ID, "Бот-помощник")
     if should_answer_correct:
-        text = (
-            f"{name} отвечает верно!\n"
-            f"Правильный ответ: <b>{_format_correct(session.current_pair)}</b>"
-        )
+        await _broadcast_correct_answer(context, session, name)
     else:
         text = f"{name} отвечает неверно ({chosen_option})."
 
-    for pid in session.players:
-        chat_id = session.player_chats.get(pid)
-        if not chat_id:
-            continue
-        try:
-            await context.bot.send_message(chat_id, text, parse_mode="HTML")
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to send dummy answer summary: %s", e)
+        for pid in session.players:
+            chat_id = session.player_chats.get(pid)
+            if not chat_id:
+                continue
+            try:
+                await context.bot.send_message(chat_id, text, parse_mode="HTML")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send dummy answer summary: %s", e)
 
     await _next_turn(context, session, should_answer_correct)
 
@@ -254,6 +253,48 @@ def _format_correct(pair: Dict[str, str]) -> str:
     if pair["type"] == "country_to_capital":
         return f"{pair['correct']} — {pair['country']}"
     return f"{pair['correct']} — {pair['capital']}"
+
+
+async def _broadcast_correct_answer(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession, name: str
+) -> None:
+    """Send a notification about a correct answer with a flag image when possible."""
+
+    pair = session.current_pair
+    if not pair:
+        return
+
+    country = pair.get("country", "")
+    capital = pair.get("capital", "")
+    flag_path = get_flag_image_path(country)
+    flag_bytes: bytes | None = None
+
+    if flag_path:
+        try:
+            flag_bytes = flag_path.read_bytes()
+        except OSError as exc:
+            logger.warning("Failed to read flag image for %s: %s", country, exc)
+            flag_bytes = None
+
+    caption = f"{name} отвечает верно!\n{country}\nСтолица: {capital}"
+    text = (
+        f"{name} отвечает верно!\n"
+        f"Правильный ответ: <b>{_format_correct(pair)}</b>"
+    )
+
+    for pid in session.players:
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
+        try:
+            if flag_bytes is not None and flag_path is not None:
+                photo = BytesIO(flag_bytes)
+                photo.name = flag_path.name
+                await context.bot.send_photo(chat_id, photo=photo, caption=caption)
+            else:
+                await context.bot.send_message(chat_id, text, parse_mode="HTML")
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send correct answer summary: %s", e)
 
 
 async def _broadcast_score(
@@ -333,22 +374,18 @@ async def _next_turn(
         if bot_correct:
             session.bot_stats += 1
             score_changed = True
-            correct_display = _format_correct(session.current_pair)
-            text = (
-                "Бот отвечает верно!\n"
-                f"Правильный ответ: <b>{correct_display}</b>"
-            )
+            await _broadcast_correct_answer(context, session, "Бот")
         else:
             text = "Бот отвечает неверно."
 
-        for pid in session.players:
-            chat_id = session.player_chats.get(pid)
-            if not chat_id:
-                continue
-            try:
-                await context.bot.send_message(chat_id, text, parse_mode="HTML")
-            except (TelegramError, HTTPError) as e:
-                logger.warning("Failed to notify about bot move: %s", e)
+            for pid in session.players:
+                chat_id = session.player_chats.get(pid)
+                if not chat_id:
+                    continue
+                try:
+                    await context.bot.send_message(chat_id, text, parse_mode="HTML")
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to notify about bot move: %s", e)
 
         if remove_after_bot or bot_correct:
             if session.remaining_pairs:
@@ -749,19 +786,16 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     name = session.player_names.get(player_id, str(player_id))
     if correct:
-        text = (
-            f"{name} отвечает верно!\n"
-            f"Правильный ответ: <b>{_format_correct(session.current_pair)}</b>"
-        )
+        await _broadcast_correct_answer(context, session, name)
     else:
         text = f"{name} отвечает неверно ({option})."
-    for pid in session.players:
-        chat_id = session.player_chats.get(pid)
-        if chat_id:
-            try:
-                await context.bot.send_message(chat_id, text, parse_mode="HTML")
-            except (TelegramError, HTTPError) as e:
-                logger.warning("Failed to send answer summary: %s", e)
+        for pid in session.players:
+            chat_id = session.player_chats.get(pid)
+            if chat_id:
+                try:
+                    await context.bot.send_message(chat_id, text, parse_mode="HTML")
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to send answer summary: %s", e)
 
     await _next_turn(context, session, correct)
 

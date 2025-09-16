@@ -1,5 +1,6 @@
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 
 def _setup_session(monkeypatch, continent=None):
@@ -7,6 +8,7 @@ def _setup_session(monkeypatch, continent=None):
     import bot.handlers_coop as hco
     hco = importlib.reload(hco)
     monkeypatch.setattr(hco, "coop_answer_kb", lambda *args, **kwargs: None)
+    monkeypatch.setattr(hco, "get_flag_image_path", lambda *_: None)
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     async def no_sleep(*args, **kwargs):
         pass
@@ -15,9 +17,18 @@ def _setup_session(monkeypatch, continent=None):
     class DummyBot:
         def __init__(self):
             self.sent = []
+            self.photos = []
 
         async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
             self.sent.append((chat_id, text))
+            return SimpleNamespace(message_id=len(self.sent))
+
+        async def send_photo(
+            self, chat_id, photo, caption=None, reply_markup=None, parse_mode=None
+        ):
+            entry = (chat_id, caption)
+            self.sent.append(entry)
+            self.photos.append(entry)
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
@@ -111,3 +122,40 @@ def test_score_broadcast_includes_team_total(monkeypatch):
     score_messages = [text for _, text in bot.sent if text.startswith("Текущий счёт:")]
     expected = "Текущий счёт: A и B — 1, Бот — 0"
     assert expected in score_messages
+    assert not bot.photos
+
+
+def test_correct_answer_sends_flag_photo(monkeypatch, tmp_path):
+    hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+
+    flag_file = tmp_path / "flag.png"
+    flag_file.write_bytes(b"fake")
+
+    monkeypatch.setattr(hco, "get_flag_image_path", lambda *_: flag_file)
+
+    session.current_pair = {
+        "country": "Франция",
+        "capital": "Париж",
+        "type": "country_to_capital",
+        "prompt": "Столица Франции?",
+        "options": ["Париж", "Марсель", "Ницца", "Лион"],
+        "correct": "Париж",
+    }
+    session.remaining_pairs = [session.current_pair]
+    session.turn_index = 0
+
+    callback = SimpleNamespace(
+        data=f"coop:ans:{session.session_id}:1:0",
+        answer=AsyncMock(),
+        edit_message_reply_markup=AsyncMock(),
+        message=SimpleNamespace(chat=SimpleNamespace(id=1)),
+    )
+    update = SimpleNamespace(callback_query=callback, effective_user=SimpleNamespace(id=1))
+
+    asyncio.run(hco.cb_coop(update, context))
+
+    assert bot.photos
+    assert len(bot.photos) == len(session.players)
+    captions = [caption for _, caption in bot.photos]
+    assert all("Франция" in caption for caption in captions)
+    assert any("Столица: Париж" in caption for caption in captions)
