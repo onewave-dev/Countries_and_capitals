@@ -9,6 +9,7 @@ import uuid
 import logging
 from io import BytesIO
 from typing import Dict, Tuple
+from html import escape
 
 from telegram import Update, ReplyKeyboardRemove, Chat, User
 from telegram.ext import ContextTypes
@@ -318,10 +319,8 @@ async def _broadcast_correct_answer(
             logger.warning("Failed to send correct answer summary: %s", e)
 
 
-async def _broadcast_score(
-    context: ContextTypes.DEFAULT_TYPE, session: CoopSession
-) -> None:
-    """Send the current team vs bot score to all players."""
+def _format_team_label(session: CoopSession) -> str:
+    """Return a readable team label based on registered players."""
 
     player_names: list[str] = []
     for index, pid in enumerate(session.players, start=1):
@@ -331,20 +330,44 @@ async def _broadcast_score(
         player_names.append(name)
 
     if not player_names:
-        team_label = "Игроки"
-    elif len(player_names) == 1:
-        team_label = player_names[0]
-    elif len(player_names) == 2:
-        team_label = f"{player_names[0]} и {player_names[1]}"
-    else:
-        team_label = ", ".join(player_names[:-1]) + f" и {player_names[-1]}"
+        return "Игроки"
+    if len(player_names) == 1:
+        return player_names[0]
+    if len(player_names) == 2:
+        return f"{player_names[0]} и {player_names[1]}"
+    return ", ".join(player_names[:-1]) + f" и {player_names[-1]}"
 
+
+def _format_remaining_questions_line(count: int) -> str:
+    """Return a formatted string describing how many questions remain."""
+
+    remainder_10 = count % 10
+    remainder_100 = count % 100
+    if remainder_10 == 1 and remainder_100 != 11:
+        word = "вопрос"
+    elif 2 <= remainder_10 <= 4 and remainder_100 not in (12, 13, 14):
+        word = "вопроса"
+    else:
+        word = "вопросов"
+    return f"❓ Осталось <b>{count}</b> {word}"
+
+
+async def _broadcast_score(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession
+) -> None:
+    """Send the current team vs bot score to all players."""
+
+    team_label = _format_team_label(session)
+    team_label_html = escape(team_label)
     players_total = sum(session.player_stats.values())
     answered_total = players_total + session.bot_stats
     remaining = max(session.total_pairs - answered_total, 0)
+    remaining_line = _format_remaining_questions_line(remaining)
     text = (
-        f"Текущий счёт: {team_label} — {players_total}, Бот — {session.bot_stats}. "
-        f"Осталось {remaining} вопросов."
+        "📊 <b>Текущий счёт</b>\n"
+        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>\n"
+        f"🤖 <b>Бот-противник</b> — <b>{session.bot_stats}</b>\n"
+        f"{remaining_line}"
     )
 
     for pid in session.players:
@@ -352,7 +375,7 @@ async def _broadcast_score(
         if not chat_id:
             continue
         try:
-            await context.bot.send_message(chat_id, text)
+            await context.bot.send_message(chat_id, text, parse_mode="HTML")
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to broadcast coop score: %s", e)
 
@@ -433,30 +456,32 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     """Send final statistics and remove the session."""
 
     _remove_session(context, session)
-    lines = ["Игра завершена."]
-    for pid in session.players:
-        name = session.player_names.get(pid, f"Игрок {pid}")
-        score = session.player_stats.get(pid, 0)
-        lines.append(f"{name}: {score}")
-    lines.append(f"Бот: {session.bot_stats}")
-
+    team_label = _format_team_label(session)
+    team_label_html = escape(team_label)
     players_total = sum(session.player_stats.values())
+    team_line = (
+        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>"
+    )
+    bot_line = f"🤖 <b>Бот-противник</b> — <b>{session.bot_stats}</b>"
     if players_total > session.bot_stats:
-        result_line = "Победила команда игроков!"
+        result_line = f"🎉 <b>Команда ({team_label_html}) побеждает!</b>"
     elif players_total < session.bot_stats:
-        result_line = "Победил бот!"
+        result_line = "🤖 <b>Бот-противник одерживает победу!</b>"
     else:
-        result_line = "Ничья!"
+        result_line = "🤝 <b>Ничья — отличная игра!</b>"
 
-    lines.append("")
-    lines.append(result_line)
-    text = "\n".join(lines)
+    text = (
+        "🏁 <b>Игра завершена!</b>\n"
+        f"{team_line}\n"
+        f"{bot_line}\n\n"
+        f"{result_line}"
+    )
     for pid in session.players:
         chat_id = session.player_chats.get(pid)
         if not chat_id:
             continue
         try:
-            await context.bot.send_message(chat_id, text)
+            await context.bot.send_message(chat_id, text, parse_mode="HTML")
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send coop final result: %s", e)
 
