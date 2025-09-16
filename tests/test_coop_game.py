@@ -5,11 +5,18 @@ from unittest.mock import AsyncMock
 
 def _setup_session(monkeypatch, continent=None):
     import importlib
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # ensure application is initialised before importing handlers
     import bot.handlers_coop as hco
     hco = importlib.reload(hco)
-    monkeypatch.setattr(hco, "coop_answer_kb", lambda *args, **kwargs: None)
+    calls = []
+
+    def fake_answer_kb(session_id, player_id, options):
+        calls.append(player_id)
+        return None
+
+    monkeypatch.setattr(hco, "coop_answer_kb", fake_answer_kb)
     monkeypatch.setattr(hco, "get_flag_image_path", lambda *_: None)
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     async def no_sleep(*args, **kwargs):
         pass
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
@@ -45,12 +52,14 @@ def _setup_session(monkeypatch, continent=None):
         chat_data=chat_data_1,
         application=SimpleNamespace(chat_data={1: chat_data_1, 2: chat_data_2}),
     )
-    return hco, session, context, bot
+    return hco, session, context, bot, calls
 
 
 def test_continent_prompt_after_names(monkeypatch):
     import importlib
-    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # ensure application is initialised before importing handlers
+    hco = importlib.reload(importlib.import_module("bot.handlers_coop"))
 
     class DummyBot:
         def __init__(self):
@@ -87,36 +96,48 @@ def test_continent_prompt_after_names(monkeypatch):
 
 
 def test_question_stays_on_wrong_answer(monkeypatch):
-    hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+    hco, session, context, bot, calls = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))
-    first = bot.sent[2][1]
+    prompt = session.current_pair["prompt"]
+    question_messages = [entry for entry in bot.sent if entry[1] == prompt]
+    assert len(question_messages) == len(session.players)
+    assert {chat_id for chat_id, *_ in question_messages} == set(session.player_chats.values())
+
+    initial_len = len(bot.sent)
     asyncio.run(hco._next_turn(context, session, False))
-    second = bot.sent[4][1]
-    assert first.split("\n", 1)[1] == second.split("\n", 1)[1]
+    prompt_after = session.current_pair["prompt"]
+    assert prompt_after == prompt
+    new_messages = bot.sent[initial_len:]
+    assert len(new_messages) == len(session.players)
+    assert all(text == prompt for _, text, _ in new_messages)
+    assert {chat_id for chat_id, *_ in new_messages} == set(session.player_chats.values())
     assert len(session.remaining_pairs) > 0
+    assert calls.count(session.players[0]) == 1
+    assert calls.count(session.players[1]) == 1
 
 
 def test_turn_order_cycles(monkeypatch):
-    hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+    hco, session, context, bot, _ = _setup_session(monkeypatch, continent="Европа")
     monkeypatch.setattr(hco.random, "random", lambda: 1.0)
     asyncio.run(hco._start_game(context, session))
+    prompt = session.current_pair["prompt"]
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 1
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 0
-    chats = [chat for chat, text, *_ in bot.sent if text and text.startswith("Ход") and "\n" in text]
-    assert chats[:3] == [1, 2, 1]
+    question_chats = [chat for chat, text, *_ in bot.sent if text == prompt]
+    assert question_chats == [1, 2, 2, 1, 1, 2]
 
 
 def test_world_mode_limit(monkeypatch):
-    hco, session, context, bot = _setup_session(monkeypatch, continent=None)
+    hco, session, context, bot, _ = _setup_session(monkeypatch, continent=None)
     monkeypatch.setattr(hco.random, "sample", lambda seq, k: list(seq)[:k])
     asyncio.run(hco._start_game(context, session))
     assert len(session.remaining_pairs) == 30
 
 
 def test_score_broadcast_includes_team_total(monkeypatch):
-    hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+    hco, session, context, bot, _ = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))
     asyncio.run(hco._next_turn(context, session, True))
 
@@ -127,7 +148,7 @@ def test_score_broadcast_includes_team_total(monkeypatch):
 
 
 def test_correct_answer_sends_flag_photo(monkeypatch, tmp_path):
-    hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+    hco, session, context, bot, _ = _setup_session(monkeypatch, continent="Европа")
 
     flag_file = tmp_path / "flag.png"
     flag_file.write_bytes(b"fake")
@@ -174,7 +195,7 @@ def test_correct_answer_sends_flag_photo(monkeypatch, tmp_path):
 
 
 def test_more_fact(monkeypatch):
-    hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+    hco, session, context, bot, _ = _setup_session(monkeypatch, continent="Европа")
 
     session.current_pair = {
         "country": "Франция",

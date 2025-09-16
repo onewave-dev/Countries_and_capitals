@@ -153,6 +153,7 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
         }
 
     monkeypatch.setattr(hco, "make_card_question", fake_make_card_question)
+    monkeypatch.setattr(hco.random, "random", lambda: 0.0)
 
     class DummyBot:
         def __init__(self):
@@ -198,10 +199,14 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
 
     # Question sent after the intro message to the human player
     assert bot.sent[1][0] == 77
-    assert "Ход" in bot.sent[1][1]
+    question_prompt = session.current_pair["prompt"]
+    assert bot.sent[1][1] == question_prompt
+    assert bot.sent[1][2] is not None
 
     # Simulate a wrong human answer -> dummy should answer automatically, then the opponent bot moves
     asyncio.run(hco._next_turn(context, session, False))
+    question_repeats = [text for _, text, _ in bot.sent if text == question_prompt]
+    assert len(question_repeats) >= 2
     assert len(bot.sent) >= 4
     dummy_photos = [entry for entry in bot.photos if entry[1] and "Бот-помощник отвечает верно" in entry[1]]
     assert dummy_photos
@@ -377,10 +382,15 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     question_messages = [
         (chat_id, text)
         for chat_id, text, *_ in bot.sent
-        if text.startswith("Ход") and "\n" in text
+        if text in {"Q1", "Q2", "Q3"}
     ]
-    assert question_messages[-1][0] == 1
-    assert "Q3" in question_messages[-1][1]
+
+    def chats_for(prompt: str) -> list[int]:
+        return [chat for chat, text in question_messages if text == prompt]
+
+    assert chats_for("Q1") == [1, 2]
+    assert chats_for("Q2") == [2, 1]
+    assert chats_for("Q3") == [1, 2]
 
     score_messages = [text for _, text, *_ in bot.sent if text.startswith("Текущий счёт:")]
     assert "Текущий счёт: Игрок 1 и Игрок 2 — 2, Бот — 1" in score_messages
