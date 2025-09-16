@@ -12,7 +12,14 @@ from io import BytesIO
 from typing import Dict, Tuple
 from html import escape
 
-from telegram import Update, ReplyKeyboardRemove, Chat, User
+from telegram import (
+    Update,
+    ReplyKeyboardRemove,
+    Chat,
+    User,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from httpx import HTTPError
@@ -22,6 +29,7 @@ from .state import CoopSession
 from .questions import make_card_question
 from .keyboards import (
     coop_answer_kb,
+    coop_join_kb,
     coop_invite_kb,
     coop_difficulty_kb,
     coop_continent_kb,
@@ -796,6 +804,67 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     "Второй игрок присоединился. Выберите континент.",
                     reply_markup=coop_continent_kb(session_id),
                 )
+
+    elif stage == "invite":
+        message = update.message
+        if not message:
+            return
+
+        contact = getattr(message, "contact", None)
+        if contact:
+            contact_user_id = getattr(contact, "user_id", None)
+            if contact_user_id:
+                inviter_name = session.player_names.get(user_id, "Ваш друг")
+                invite_text = (
+                    f"{inviter_name} приглашает вас присоединиться к кооперативной игре "
+                    "«Столицы мира». Нажмите кнопку, чтобы вступить."
+                )
+                try:
+                    await context.bot.send_message(
+                        contact_user_id,
+                        invite_text,
+                        reply_markup=coop_join_kb(session_id),
+                    )
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to deliver coop invite: %s", e)
+                    await message.reply_text(
+                        "Не удалось отправить приглашение. Отправьте ссылку вручную.",
+                    )
+                else:
+                    await message.reply_text(
+                        "Приглашение отправлено. Как только второй игрок присоединится, продолжим настройку матча.",
+                    )
+            else:
+                await message.reply_text(
+                    "У этого контакта нет Telegram-аккаунта. Передайте ссылку вручную.",
+                )
+            return
+
+        text = (message.text or "").strip()
+        if text and text.casefold() == "создать ссылку".casefold():
+            bot_username = getattr(context.bot, "username", None)
+            if not bot_username:
+                get_me = getattr(context.bot, "get_me", None)
+                if get_me:
+                    try:
+                        me = await get_me()
+                        bot_username = getattr(me, "username", None)
+                    except (TelegramError, HTTPError) as e:
+                        logger.warning("Failed to fetch bot username for coop link: %s", e)
+            if not bot_username:
+                await message.reply_text(
+                    "Не удалось получить имя бота. Попробуйте позже.",
+                )
+                return
+            invite_link = f"https://t.me/{bot_username}?start=coop_{session_id}"
+            markup = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🙋 Присоединиться", url=invite_link)]]
+            )
+            await message.reply_text(
+                f"Поделитесь этой ссылкой с другом:\n{invite_link}",
+                reply_markup=markup,
+            )
+            return
 
 
 async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

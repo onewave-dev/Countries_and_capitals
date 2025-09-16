@@ -143,6 +143,179 @@ def test_preselected_continent_skips_prompt(monkeypatch):
     assert all("Выберите континент" not in t for t in texts)
 
 
+def test_invite_stage_sends_contact_invitation(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # ensure application is initialised before importing handlers
+
+    hco = importlib.reload(importlib.import_module("bot.handlers_coop"))
+
+    join_calls: list[str] = []
+
+    def fake_join_kb(session_id: str):
+        join_calls.append(session_id)
+        return SimpleNamespace(kind="join", session=session_id)
+
+    monkeypatch.setattr(hco, "coop_join_kb", fake_join_kb)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1]
+    session.player_names = {1: "Игрок"}
+    session.player_chats = {1: 1}
+
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={"coop_pending": {"session_id": "s1", "stage": "invite"}},
+        chat_data={"sessions": {"s1": session}},
+    )
+
+    replies: list[tuple[str, object]] = []
+
+    async def reply_text(text, reply_markup=None):
+        replies.append((text, reply_markup))
+        return SimpleNamespace(message_id=len(replies))
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(
+            contact=SimpleNamespace(user_id=777, first_name="Друг"),
+            text=None,
+            reply_text=reply_text,
+        ),
+    )
+
+    asyncio.run(hco.msg_coop(update, context))
+
+    assert join_calls == ["s1"]
+    assert bot.sent and bot.sent[0][0] == 777
+    assert bot.sent[0][2].session == "s1"
+    assert replies and "Приглашение отправлено" in replies[0][0]
+    assert context.user_data["coop_pending"]["stage"] == "invite"
+
+
+def test_invite_stage_handles_contact_without_user_id(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # ensure application is initialised before importing handlers
+
+    hco = importlib.reload(importlib.import_module("bot.handlers_coop"))
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1]
+    session.player_names = {1: "Игрок"}
+    session.player_chats = {1: 1}
+
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={"coop_pending": {"session_id": "s1", "stage": "invite"}},
+        chat_data={"sessions": {"s1": session}},
+    )
+
+    replies: list[tuple[str, object]] = []
+
+    async def reply_text(text, reply_markup=None):
+        replies.append((text, reply_markup))
+        return SimpleNamespace(message_id=len(replies))
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(
+            contact=SimpleNamespace(user_id=None, first_name="Друг"),
+            text=None,
+            reply_text=reply_text,
+        ),
+    )
+
+    asyncio.run(hco.msg_coop(update, context))
+
+    assert not bot.sent
+    assert replies and "ссылку вручную" in replies[0][0]
+    assert context.user_data["coop_pending"]["stage"] == "invite"
+
+
+def test_invite_stage_generates_link(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # ensure application is initialised before importing handlers
+
+    hco = importlib.reload(importlib.import_module("bot.handlers_coop"))
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+            self._username = None
+            self._me = SimpleNamespace(username="TestBot")
+
+        @property
+        def username(self):
+            return self._username
+
+        async def get_me(self):
+            return self._me
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1]
+    session.player_names = {1: "Игрок"}
+    session.player_chats = {1: 1}
+
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={"coop_pending": {"session_id": "s1", "stage": "invite"}},
+        chat_data={"sessions": {"s1": session}},
+    )
+
+    replies: list[tuple[str, object]] = []
+
+    async def reply_text(text, reply_markup=None):
+        replies.append((text, reply_markup))
+        return SimpleNamespace(message_id=len(replies))
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=1),
+        message=SimpleNamespace(
+            contact=None,
+            text="Создать ссылку",
+            reply_text=reply_text,
+        ),
+    )
+
+    asyncio.run(hco.msg_coop(update, context))
+
+    expected_link = "https://t.me/TestBot?start=coop_s1"
+    assert not bot.sent
+    assert replies
+    response_text, markup = replies[0]
+    assert expected_link in response_text
+    assert markup.inline_keyboard[0][0].url == expected_link
+    assert context.user_data["coop_pending"]["stage"] == "invite"
+
+
 def test_question_stays_on_wrong_answer(monkeypatch):
     hco, session, context, bot, calls = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))
