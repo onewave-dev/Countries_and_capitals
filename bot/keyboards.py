@@ -296,7 +296,7 @@ def coop_invite_kb() -> ReplyKeyboardMarkup:
         [
             KeyboardButton(
                 "Пригласить из контактов",
-                request_user=KeyboardButtonRequestUser(
+                request_users=KeyboardButtonRequestUser(
                     request_id=COOP_INVITE_REQUEST_ID,
                     user_is_bot=False,
                 ),
