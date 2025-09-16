@@ -101,3 +101,13 @@ def test_world_mode_limit(monkeypatch):
     monkeypatch.setattr(hco.random, "sample", lambda seq, k: list(seq)[:k])
     asyncio.run(hco._start_game(context, session))
     assert len(session.remaining_pairs) == 30
+
+
+def test_score_broadcast_includes_team_total(monkeypatch):
+    hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+    asyncio.run(hco._start_game(context, session))
+    asyncio.run(hco._next_turn(context, session, True))
+
+    score_messages = [text for _, text in bot.sent if text.startswith("Текущий счёт:")]
+    expected = "Текущий счёт: A и B — 1, Бот — 0"
+    assert expected in score_messages
