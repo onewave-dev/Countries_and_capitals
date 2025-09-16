@@ -23,8 +23,10 @@ from .keyboards import (
     coop_invite_kb,
     coop_difficulty_kb,
     coop_continent_kb,
+    coop_fact_more_kb,
 )
 from .flags import get_flag_image_path
+from .facts import get_static_fact, generate_llm_fact
 
 logger = logging.getLogger(__name__)
 
@@ -139,11 +141,14 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     session.turn_index = 0
     session.player_stats = {pid: 0 for pid in session.players}
     session.bot_stats = 0
+    session.total_pairs = len(session.remaining_pairs)
+    session.fact_message_ids.clear()
+    session.fact_subject = None
+    session.fact_text = None
 
-    total = len(session.remaining_pairs)
     intro_text = (
         "Игра начинается!\n"
-        f"Всего вопросов: {total}.\n"
+        f"Всего вопросов: {session.total_pairs}.\n"
         "Игроки отвечают по очереди, затем бот.\n"
         "Команда игроков побеждает, если наберёт больше очков, чем бот.\n"
         "При равенстве очков будет ничья."
@@ -189,7 +194,8 @@ async def _auto_answer_dummy(
 
     name = session.player_names.get(DUMMY_PLAYER_ID, "Бот-помощник")
     if should_answer_correct:
-        await _broadcast_correct_answer(context, session, name)
+        projected = sum(session.player_stats.values()) + session.bot_stats + 1
+        await _broadcast_correct_answer(context, session, name, projected)
     else:
         text = f"{name} отвечает неверно ({chosen_option})."
 
@@ -249,16 +255,13 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
             logger.warning("Failed to notify waiting player: %s", e)
 
 
-def _format_correct(pair: Dict[str, str]) -> str:
-    if pair["type"] == "country_to_capital":
-        return f"{pair['correct']} — {pair['country']}"
-    return f"{pair['correct']} — {pair['capital']}"
-
-
 async def _broadcast_correct_answer(
-    context: ContextTypes.DEFAULT_TYPE, session: CoopSession, name: str
+    context: ContextTypes.DEFAULT_TYPE,
+    session: CoopSession,
+    name: str,
+    projected_total: int | None = None,
 ) -> None:
-    """Send a notification about a correct answer with a flag image when possible."""
+    """Send a notification about a correct answer with progress and a fact."""
 
     pair = session.current_pair
     if not pair:
@@ -266,9 +269,25 @@ async def _broadcast_correct_answer(
 
     country = pair.get("country", "")
     capital = pair.get("capital", "")
+
+    fact = get_static_fact(country)
+    if projected_total is None:
+        correct_total = sum(session.player_stats.values()) + session.bot_stats
+    else:
+        correct_total = projected_total
+    remaining = max(session.total_pairs - correct_total, 0)
+    header = (
+        f"✅ {name} отвечает верно. (Правильных ответов: {correct_total} из "
+        f"{session.total_pairs}. Осталось вопросов {remaining})"
+    )
+    body = (
+        f"{country}\nСтолица: {capital}\n\n{fact}\n\n"
+        "Нажми кнопку ниже, чтобы узнать еще один факт"
+    )
+    caption_text = f"{header}\n\n{body}"
+
     flag_path = get_flag_image_path(country)
     flag_bytes: bytes | None = None
-
     if flag_path:
         try:
             flag_bytes = flag_path.read_bytes()
@@ -276,23 +295,29 @@ async def _broadcast_correct_answer(
             logger.warning("Failed to read flag image for %s: %s", country, exc)
             flag_bytes = None
 
-    caption = f"{name} отвечает верно!\n{country}\nСтолица: {capital}"
-    text = (
-        f"{name} отвечает верно!\n"
-        f"Правильный ответ: <b>{_format_correct(pair)}</b>"
-    )
+    session.fact_message_ids.clear()
+    session.fact_subject = country
+    session.fact_text = fact
+    kb = coop_fact_more_kb(session.session_id)
 
     for pid in session.players:
         chat_id = session.player_chats.get(pid)
         if not chat_id:
             continue
         try:
+            msg = None
             if flag_bytes is not None and flag_path is not None:
                 photo = BytesIO(flag_bytes)
                 photo.name = flag_path.name
-                await context.bot.send_photo(chat_id, photo=photo, caption=caption)
+                msg = await context.bot.send_photo(
+                    chat_id, photo=photo, caption=caption_text, reply_markup=kb
+                )
             else:
-                await context.bot.send_message(chat_id, text, parse_mode="HTML")
+                msg = await context.bot.send_message(
+                    chat_id, caption_text, reply_markup=kb, parse_mode="HTML"
+                )
+            if msg:
+                session.fact_message_ids[pid] = msg.message_id
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send correct answer summary: %s", e)
 
@@ -757,6 +782,42 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _start_game(context, session)
         return
 
+    if action == "more_fact":
+        session_id = parts[2]
+        session = get_session(session_id)
+        if not session:
+            await q.answer()
+            return
+        pid = update.effective_user.id
+        if pid not in session.players:
+            await q.answer("Не ваша кнопка", show_alert=True)
+            return
+        msg_id = session.fact_message_ids.get(pid)
+        if msg_id != q.message.message_id:
+            await q.answer()
+            return
+        await q.answer()
+        extra = await generate_llm_fact(
+            session.fact_subject or "", session.fact_text or ""
+        )
+        base = q.message.caption or q.message.text or ""
+        base = base.replace(
+            "\n\nНажми кнопку ниже, чтобы узнать еще один факт", ""
+        )
+        try:
+            if q.message.photo:
+                await q.edit_message_caption(
+                    caption=f"{base}\n\nЕще один факт: {extra}", reply_markup=None
+                )
+            else:
+                await q.edit_message_text(
+                    f"{base}\n\nЕще один факт: {extra}", reply_markup=None
+                )
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send extra fact: %s", e)
+        session.fact_message_ids.pop(pid, None)
+        return
+
     if action != "ans":
         await q.answer()
         return
@@ -786,7 +847,8 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     name = session.player_names.get(player_id, str(player_id))
     if correct:
-        await _broadcast_correct_answer(context, session, name)
+        projected = sum(session.player_stats.values()) + session.bot_stats + 1
+        await _broadcast_correct_answer(context, session, name, projected)
     else:
         text = f"{name} отвечает неверно ({option})."
         for pid in session.players:

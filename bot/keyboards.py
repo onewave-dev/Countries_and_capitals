@@ -371,3 +371,10 @@ def coop_answer_kb(session_id: str, player_id: int, options: list[str]) -> Inlin
         rows.append(buffer)
     return InlineKeyboardMarkup(rows)
 
+
+def coop_fact_more_kb(session_id: str) -> InlineKeyboardMarkup:
+    """Keyboard with a button to request another fact."""
+
+    rows = [[InlineKeyboardButton("Еще один факт", callback_data=f"coop:more_fact:{session_id}")]]
+    return InlineKeyboardMarkup(rows)
+

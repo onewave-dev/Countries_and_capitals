@@ -142,6 +142,10 @@ class CoopSession:
     turn_index: int = 0
     player_stats: Dict[int, int] = field(default_factory=dict)
     bot_stats: int = 0
+    total_pairs: int = 0
+    fact_message_ids: Dict[int, int] = field(default_factory=dict)
+    fact_subject: str | None = None
+    fact_text: str | None = None
 
 
 @dataclass

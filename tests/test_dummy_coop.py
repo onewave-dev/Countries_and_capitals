@@ -206,7 +206,9 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     dummy_photos = [entry for entry in bot.photos if entry[1] and "Бот-помощник отвечает верно" in entry[1]]
     assert dummy_photos
     assert all(chat_id == 77 for chat_id, *_ in dummy_photos)
-    opponent_photos = [entry for entry in bot.photos if entry[1] and entry[1].startswith("Бот отвечает")]
+    opponent_photos = [
+        entry for entry in bot.photos if entry[1] and "Бот отвечает верно" in entry[1]
+    ]
     assert opponent_photos
     assert opponent_photos[-1][0] == 77
     assert bot.sent[-1][1].startswith("Игра завершена.")
@@ -338,6 +340,7 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
             "type": "country_to_capital",
         },
     ]
+    session.total_pairs = len(session.remaining_pairs)
 
     chat_data_1 = {"sessions": {"s1": session}}
     chat_data_2 = {"sessions": {"s1": session}}
