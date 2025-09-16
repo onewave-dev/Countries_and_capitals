@@ -20,15 +20,16 @@ def _setup_session(monkeypatch, continent=None):
             self.photos = []
 
         async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
-            self.sent.append((chat_id, text))
+            entry = (chat_id, text, reply_markup)
+            self.sent.append(entry)
             return SimpleNamespace(message_id=len(self.sent))
 
         async def send_photo(
             self, chat_id, photo, caption=None, reply_markup=None, parse_mode=None
         ):
-            entry = (chat_id, caption)
+            entry = (chat_id, caption, reply_markup)
             self.sent.append(entry)
-            self.photos.append(entry)
+            self.photos.append((chat_id, caption))
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
@@ -103,7 +104,7 @@ def test_turn_order_cycles(monkeypatch):
     assert session.turn_index == 1
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 0
-    chats = [chat for chat, text in bot.sent if text.startswith("Ход") and "\n" in text]
+    chats = [chat for chat, text, *_ in bot.sent if text and text.startswith("Ход") and "\n" in text]
     assert chats[:3] == [1, 2, 1]
 
 
@@ -119,7 +120,7 @@ def test_score_broadcast_includes_team_total(monkeypatch):
     asyncio.run(hco._start_game(context, session))
     asyncio.run(hco._next_turn(context, session, True))
 
-    score_messages = [text for _, text in bot.sent if text.startswith("Текущий счёт:")]
+    score_messages = [text for _, text, *_ in bot.sent if text and text.startswith("Текущий счёт:")]
     expected = "Текущий счёт: A и B — 1, Бот — 0"
     assert expected in score_messages
     assert not bot.photos
@@ -143,6 +144,7 @@ def test_correct_answer_sends_flag_photo(monkeypatch, tmp_path):
     }
     session.remaining_pairs = [session.current_pair]
     session.turn_index = 0
+    session.total_pairs = 1
 
     callback = SimpleNamespace(
         data=f"coop:ans:{session.session_id}:1:0",
@@ -159,3 +161,73 @@ def test_correct_answer_sends_flag_photo(monkeypatch, tmp_path):
     captions = [caption for _, caption in bot.photos]
     assert all("Франция" in caption for caption in captions)
     assert any("Столица: Париж" in caption for caption in captions)
+    first_entry = next(e for e in bot.sent if e[1] and "Франция" in e[1])
+    caption = first_entry[1]
+    markup = first_entry[2]
+    assert "Правильных ответов: 1 из 1" in caption
+    assert "Интересный факт:" in caption
+    assert any(
+        btn.callback_data == f"coop:more_fact:{session.session_id}"
+        for row in markup.inline_keyboard
+        for btn in row
+    )
+
+
+def test_more_fact(monkeypatch):
+    hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
+
+    session.current_pair = {
+        "country": "Франция",
+        "capital": "Париж",
+        "type": "country_to_capital",
+        "prompt": "?",
+        "options": ["Париж"],
+        "correct": "Париж",
+    }
+    session.remaining_pairs = [
+        session.current_pair,
+        {
+            "prompt": "Q2",
+            "options": ["A"],
+            "correct": "A",
+            "country": "X",
+            "capital": "A",
+            "type": "country_to_capital",
+        },
+    ]
+    session.turn_index = 0
+    session.total_pairs = len(session.remaining_pairs)
+
+    monkeypatch.setattr(hco, "get_static_fact", lambda *_: "Интересный факт: old")
+    monkeypatch.setattr(hco, "generate_llm_fact", AsyncMock(return_value="new"))
+
+    callback = SimpleNamespace(
+        data=f"coop:ans:{session.session_id}:1:0",
+        answer=AsyncMock(),
+        edit_message_reply_markup=AsyncMock(),
+        message=SimpleNamespace(chat=SimpleNamespace(id=1)),
+    )
+    update = SimpleNamespace(callback_query=callback, effective_user=SimpleNamespace(id=1))
+    asyncio.run(hco.cb_coop(update, context))
+
+    msg_id = session.fact_message_ids[1]
+    caption = next(e[1] for e in bot.sent if e[1] and "Франция" in e[1])
+
+    q_more = SimpleNamespace(
+        data=f"coop:more_fact:{session.session_id}",
+        message=SimpleNamespace(
+            chat=SimpleNamespace(id=1),
+            message_id=msg_id,
+            caption=caption,
+            text=None,
+            photo=[object()],
+        ),
+        answer=AsyncMock(),
+        edit_message_caption=AsyncMock(),
+        edit_message_text=AsyncMock(),
+    )
+    update_more = SimpleNamespace(callback_query=q_more, effective_user=SimpleNamespace(id=1))
+    asyncio.run(hco.cb_coop(update_more, context))
+    q_more.edit_message_caption.assert_awaited_once()
+    assert "new" in q_more.edit_message_caption.call_args[1]["caption"]
+    assert 1 not in session.fact_message_ids

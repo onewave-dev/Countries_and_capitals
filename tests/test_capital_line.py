@@ -175,6 +175,7 @@ def test_coop_bot_move_mentions_capital(monkeypatch):
             "correct": "Канада",
         }
         session.remaining_pairs = [session.current_pair]
+        session.total_pairs = 1
         chat_data = {"sessions": {"s1": session}}
         context = SimpleNamespace(
             bot=bot,
