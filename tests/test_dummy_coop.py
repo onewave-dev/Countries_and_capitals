@@ -339,6 +339,9 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     assert question_messages[-1][0] == 1
     assert "Q3" in question_messages[-1][1]
 
+    score_messages = [text for _, text, *_ in bot.sent if text.startswith("Текущий счёт:")]
+    assert "Текущий счёт: Игрок 1 и Игрок 2 — 2, Бот — 1" in score_messages
+
     assert session.turn_index == 0
     assert session.current_pair and session.current_pair["prompt"] == "Q3"
     assert session.player_stats == {1: 1, 2: 1}

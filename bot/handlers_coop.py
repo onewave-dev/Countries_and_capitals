@@ -256,6 +256,40 @@ def _format_correct(pair: Dict[str, str]) -> str:
     return f"{pair['correct']} — {pair['capital']}"
 
 
+async def _broadcast_score(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession
+) -> None:
+    """Send the current team vs bot score to all players."""
+
+    player_names: list[str] = []
+    for index, pid in enumerate(session.players, start=1):
+        name = session.player_names.get(pid)
+        if not name:
+            name = f"Игрок {index}"
+        player_names.append(name)
+
+    if not player_names:
+        team_label = "Игроки"
+    elif len(player_names) == 1:
+        team_label = player_names[0]
+    elif len(player_names) == 2:
+        team_label = f"{player_names[0]} и {player_names[1]}"
+    else:
+        team_label = ", ".join(player_names[:-1]) + f" и {player_names[-1]}"
+
+    players_total = sum(session.player_stats.values())
+    text = f"Текущий счёт: {team_label} — {players_total}, Бот — {session.bot_stats}"
+
+    for pid in session.players:
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
+        try:
+            await context.bot.send_message(chat_id, text)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to broadcast coop score: %s", e)
+
+
 async def _next_turn(
     context: ContextTypes.DEFAULT_TYPE, session: CoopSession, correct: bool
 ) -> None:
@@ -268,8 +302,11 @@ async def _next_turn(
     remove_now = False
     remove_after_bot = False
 
+    score_changed = False
+
     if correct:
         session.player_stats[current_player] = session.player_stats.get(current_player, 0) + 1
+        score_changed = True
         next_index = session.turn_index + 1
         if next_index < len(session.players):
             remove_now = True
@@ -295,6 +332,7 @@ async def _next_turn(
         bot_correct = random.random() < bot_accuracy
         if bot_correct:
             session.bot_stats += 1
+            score_changed = True
             correct_display = _format_correct(session.current_pair)
             text = (
                 "Бот отвечает верно!\n"
@@ -317,6 +355,9 @@ async def _next_turn(
                 session.remaining_pairs.pop(0)
             session.current_pair = None
         session.turn_index = 0
+
+    if score_changed:
+        await _broadcast_score(context, session)
 
     if not session.remaining_pairs:
         await _finish_game(context, session)
