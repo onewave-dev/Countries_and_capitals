@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import os
 import random
 import uuid
@@ -174,6 +175,61 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     )
     await asyncio.sleep(FIRST_QUESTION_DELAY)
     await _ask_current_pair(context, session)
+
+
+def _is_flag_emoji(value: str) -> bool:
+    """Return ``True`` if ``value`` looks like a regional flag emoji."""
+
+    if len(value) != 2:
+        return False
+    return all(0x1F1E6 <= ord(char) <= 0x1F1FF for char in value)
+
+
+def _split_flag_answer(option: str | None) -> tuple[str, str]:
+    """Split ``option`` into (flag, text) components."""
+
+    if not option:
+        return "", ""
+
+    option = option.strip()
+
+    parts = option.split(" ", 1)
+    if len(parts) == 2 and _is_flag_emoji(parts[0]):
+        return parts[0], parts[1]
+    return "", option
+
+
+def _format_bot_wrong_answer(pair: dict | None, answer: str | None) -> str:
+    """Return a formatted notification about bot's incorrect answer."""
+
+    if pair is None:
+        return "Бот-противник ответил.  Ответ неверный."
+
+    if not answer:
+        options = pair.get("options") or []
+        if options:
+            answer = options[0]
+        else:
+            answer = ""
+
+    question_type = pair.get("type")
+    if question_type == "country_to_capital":
+        answer_text = f"<b>{html.escape(str(answer))}</b>" if answer else ""
+    else:
+        flag, title = _split_flag_answer(str(answer))
+        parts: list[str] = []
+        if flag:
+            parts.append(flag)
+        if title:
+            parts.append(f"<b>{html.escape(title)}</b>")
+        answer_text = " ".join(parts).strip()
+        if not answer_text and answer:
+            answer_text = f"<b>{html.escape(str(answer))}</b>"
+
+    if not answer_text:
+        answer_text = "<b>—</b>"
+
+    return f"Бот-противник ответил {answer_text}.  Ответ неверный."
 
 
 async def _auto_answer_dummy(
@@ -393,7 +449,17 @@ async def _next_turn(
             score_changed = True
             await _broadcast_correct_answer(context, session, "Бот")
         else:
-            text = "Бот отвечает неверно."
+            pair = session.current_pair if isinstance(session.current_pair, dict) else None
+            bot_answer: str | None = None
+            if pair:
+                options = list(pair.get("options") or [])
+                correct_option = pair.get("correct")
+                wrong_options = [opt for opt in options if opt != correct_option]
+                if wrong_options:
+                    bot_answer = random.choice(wrong_options)
+                elif options:
+                    bot_answer = options[0]
+            text = _format_bot_wrong_answer(pair, bot_answer)
 
             for pid in session.players:
                 chat_id = session.player_chats.get(pid)
