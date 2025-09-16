@@ -13,10 +13,12 @@ class DummyBot:
 
 
 def test_coop_capitals_from_callback_and_cancel():
+    chat_data = {}
     context = SimpleNamespace(
         bot=DummyBot(),
         user_data={},
-        application=SimpleNamespace(bot_data={}),
+        chat_data=chat_data,
+        application=SimpleNamespace(chat_data={100: chat_data}),
     )
 
     update_cb = SimpleNamespace(
@@ -27,7 +29,7 @@ def test_coop_capitals_from_callback_and_cancel():
 
     asyncio.run(cmd_coop_capitals(update_cb, context))
 
-    sessions = context.application.bot_data.get("coop_sessions")
+    sessions = context.chat_data.get("sessions")
     assert sessions, "Session was not created"
     session = next(iter(sessions.values()))
     assert session.players == [1], "Wrong user registered"
@@ -40,6 +42,6 @@ def test_coop_capitals_from_callback_and_cancel():
 
     asyncio.run(cmd_coop_cancel(cancel_update, context))
 
-    assert not context.application.bot_data["coop_sessions"], "Session was not cancelled"
+    assert not context.chat_data.get("sessions"), "Session was not cancelled"
     assert any(text == "Матч отменён" for _, text in context.bot.sent)
 
