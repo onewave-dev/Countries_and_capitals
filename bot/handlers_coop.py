@@ -7,6 +7,7 @@ import os
 import random
 import uuid
 import logging
+from pathlib import Path
 from typing import Dict, Tuple
 
 from telegram import Update, ReplyKeyboardRemove, Chat, User
@@ -14,7 +15,12 @@ from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from httpx import HTTPError
 
-from app import DATA
+try:
+    from app import DATA
+except ImportError:  # pragma: no cover - fallback for circular import in tests
+    from bot.state import DataSource
+
+    DATA = DataSource.load(Path(__file__).resolve().parent.parent / "data" / "capitals.json")
 from .state import CoopSession
 from .questions import make_card_question
 from .keyboards import (
@@ -256,18 +262,55 @@ def _format_correct(pair: Dict[str, str]) -> str:
     return f"{pair['correct']} — {pair['capital']}"
 
 
+async def _broadcast_score(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession
+) -> None:
+    """Send the combined team score against the bot to all players."""
+
+    player_names: list[str] = []
+    for index, pid in enumerate(session.players, start=1):
+        name = session.player_names.get(pid)
+        if not name:
+            name = f"Игрок {index}"
+        player_names.append(name)
+
+    if not player_names:
+        return
+
+    if len(player_names) == 1:
+        players_label = player_names[0]
+    elif len(player_names) == 2:
+        players_label = f"{player_names[0]} и {player_names[1]}"
+    else:
+        players_label = ", ".join(player_names[:-1]) + f" и {player_names[-1]}"
+
+    players_total = sum(session.player_stats.get(pid, 0) for pid in session.players)
+    text = f"Текущий счёт: {players_label} — {players_total}, Бот — {session.bot_stats}"
+
+    for pid in session.players:
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
+        try:
+            await context.bot.send_message(chat_id, text)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to broadcast score: %s", e)
+
+
 async def _next_turn(
     context: ContextTypes.DEFAULT_TYPE, session: CoopSession, correct: bool
 ) -> None:
     """Advance to the next turn. Handles bot moves when needed."""
 
     current_player = session.players[session.turn_index]
+    score_changed = False
     if correct:
         session.player_stats[current_player] = session.player_stats.get(current_player, 0) + 1
         if session.remaining_pairs:
             session.remaining_pairs.pop(0)
         session.current_pair = None
         session.turn_index = (session.turn_index + 1) % len(session.players)
+        score_changed = True
     else:
         session.turn_index += 1
 
@@ -284,6 +327,7 @@ async def _next_turn(
             if session.remaining_pairs:
                 session.remaining_pairs.pop(0)
             session.current_pair = None
+            score_changed = True
         else:
             text = "Бот отвечает неверно."
         for pid in session.players:
@@ -294,6 +338,9 @@ async def _next_turn(
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to notify about bot move: %s", e)
         session.turn_index = 0
+
+    if score_changed:
+        await _broadcast_score(context, session)
 
     if session.remaining_pairs:
         logger.debug(

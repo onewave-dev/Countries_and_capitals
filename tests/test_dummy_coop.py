@@ -184,10 +184,19 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
 
     # Simulate a wrong human answer -> dummy should answer automatically and finish the game
     asyncio.run(hco._next_turn(context, session, False))
+    scoreboard_texts = [
+        text for _, text, *_ in bot.sent if text.startswith("Текущий счёт:")
+    ]
+    assert scoreboard_texts
+    expected_score = "Текущий счёт: Админ и Бот-помощник — 1, Бот — 0"
+    assert expected_score in scoreboard_texts
+    score_index = next(
+        i for i, (_, text, *_) in enumerate(bot.sent) if text == expected_score
+    )
     # Dummy summary is the penultimate message; final results come last
     assert len(bot.sent) >= 3
-    assert "Бот-помощник отвечает верно" in bot.sent[-2][1]
-    assert bot.sent[-2][0] == 77
+    assert "Бот-помощник отвечает верно" in bot.sent[score_index - 1][1]
+    assert bot.sent[score_index - 1][0] == 77
     assert all(chat_id is not None for chat_id, *_ in bot.sent)
     assert session.player_stats[hco.DUMMY_PLAYER_ID] >= 1
 

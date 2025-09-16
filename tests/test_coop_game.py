@@ -94,6 +94,13 @@ def test_turn_order_cycles(monkeypatch):
     assert session.turn_index == 0
     chats = [chat for chat, text in bot.sent if text.startswith("Ход") and "\n" in text]
     assert chats[:3] == [1, 2, 1]
+    asyncio.run(hco._next_turn(context, session, True))
+    scoreboard_texts = [
+        text for _, text in bot.sent if text.startswith("Текущий счёт:")
+    ]
+    assert scoreboard_texts
+    expected_score = "Текущий счёт: A и B — 1, Бот — 0"
+    assert expected_score in scoreboard_texts
 
 
 def test_world_mode_limit(monkeypatch):
