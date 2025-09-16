@@ -26,6 +26,7 @@ from .keyboards import (
     coop_difficulty_kb,
     coop_continent_kb,
     coop_fact_more_kb,
+    coop_finish_kb,
 )
 from .flags import get_flag_image_path
 from .facts import get_static_fact, generate_llm_fact
@@ -542,12 +543,15 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
         f"{bot_line}\n\n"
         f"{result_line}"
     )
+    keyboard = coop_finish_kb()
     for pid in session.players:
         chat_id = session.player_chats.get(pid)
         if not chat_id:
             continue
         try:
-            await context.bot.send_message(chat_id, text, parse_mode="HTML")
+            await context.bot.send_message(
+                chat_id, text, parse_mode="HTML", reply_markup=keyboard
+            )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send coop final result: %s", e)
 

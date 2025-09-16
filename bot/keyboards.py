@@ -380,3 +380,13 @@ def coop_fact_more_kb(session_id: str) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton("Еще один факт", callback_data=f"coop:more_fact:{session_id}")]]
     return InlineKeyboardMarkup(rows)
 
+
+def coop_finish_kb() -> InlineKeyboardMarkup:
+    """Keyboard shown after a cooperative match finishes."""
+
+    rows = [
+        [InlineKeyboardButton("Сыграть еще раз", callback_data="menu:coop")],
+        [InlineKeyboardButton("В меню", callback_data="menu:main")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
