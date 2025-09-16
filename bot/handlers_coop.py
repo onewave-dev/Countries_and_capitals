@@ -119,7 +119,7 @@ def _find_user_session_global(
 
 
 async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
-    """Prepare the question queue and send the first question."""
+    """Prepare the question queue and send an intro before the first question."""
 
     countries = DATA.countries(session.continent_filter)
     if session.continent_filter is None:
@@ -127,7 +127,9 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     session.remaining_pairs = []
     for country in countries:
         mode = random.choice(["country_to_capital", "capital_to_country"])
-        item = country if mode == "country_to_capital" else DATA.capital_by_country[country]
+        item = (
+            country if mode == "country_to_capital" else DATA.capital_by_country[country]
+        )
         q = make_card_question(DATA, item, mode, session.continent_filter)
         session.remaining_pairs.append(q)
     random.shuffle(session.remaining_pairs)
@@ -135,6 +137,29 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     session.turn_index = 0
     session.player_stats = {pid: 0 for pid in session.players}
     session.bot_stats = 0
+
+    total = len(session.remaining_pairs)
+    intro_text = (
+        "Игра начинается!\n"
+        f"Всего вопросов: {total}.\n"
+        "Игроки отвечают по очереди, затем бот.\n"
+        "Команда игроков побеждает, если наберёт больше очков, чем бот.\n"
+        "При равенстве очков будет ничья."
+    )
+    for pid in session.players:
+        chat_id = session.player_chats.get(pid)
+        if not chat_id:
+            continue
+        try:
+            await context.bot.send_message(chat_id, intro_text)
+        except (TelegramError, HTTPError) as e:
+            logger.warning("Failed to send coop intro: %s", e)
+
+    logger.debug(
+        "Delaying first cooperative question for session %s by 4 seconds",
+        session.session_id,
+    )
+    await asyncio.sleep(4)
     await _ask_current_pair(context, session)
 
 
