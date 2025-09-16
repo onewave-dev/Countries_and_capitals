@@ -41,6 +41,11 @@ except ValueError:
 # Probability of the bot answering correctly depending on the difficulty.
 ACCURACY = {"easy": 0.5, "medium": 0.7, "hard": 0.9}
 
+# Additional delay before showing every question in cooperative games.
+EXTRA_QUESTION_DELAY = 4
+FIRST_QUESTION_DELAY = 4 + EXTRA_QUESTION_DELAY
+NEXT_QUESTION_DELAY = 2 + EXTRA_QUESTION_DELAY
+
 
 # ===== Helpers =====
 
@@ -163,10 +168,11 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
             logger.warning("Failed to send coop intro: %s", e)
 
     logger.debug(
-        "Delaying first cooperative question for session %s by 4 seconds",
+        "Delaying first cooperative question for session %s by %s seconds",
         session.session_id,
+        FIRST_QUESTION_DELAY,
     )
-    await asyncio.sleep(4)
+    await asyncio.sleep(FIRST_QUESTION_DELAY)
     await _ask_current_pair(context, session)
 
 
@@ -411,10 +417,11 @@ async def _next_turn(
         return
 
     logger.debug(
-        "Delaying next cooperative question for session %s by 2 seconds",
+        "Delaying next cooperative question for session %s by %s seconds",
         session.session_id,
+        NEXT_QUESTION_DELAY,
     )
-    await asyncio.sleep(2)
+    await asyncio.sleep(NEXT_QUESTION_DELAY)
     if session.remaining_pairs:
         await _ask_current_pair(context, session)
         return
