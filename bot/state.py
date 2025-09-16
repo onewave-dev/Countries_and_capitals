@@ -134,6 +134,7 @@ class CoopSession:
     player_chats: Dict[int, int] = field(default_factory=dict)
     player_names: Dict[int, str] = field(default_factory=dict)
     continent_filter: str | None = None
+    continent_label: str | None = None
     mode: str = "mixed"
     difficulty: str = ""
     question_message_ids: Dict[int, int] = field(default_factory=dict)

@@ -511,6 +511,12 @@ async def cmd_coop_capitals(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     session = CoopSession(session_id=session_id)
     session.players.append(user.id)
     session.player_chats[user.id] = chat.id
+    selected_continent = context.user_data.get("continent")
+    if selected_continent:
+        session.continent_label = selected_continent
+        session.continent_filter = (
+            None if selected_continent == "Весь мир" else selected_continent
+        )
     sessions[session_id] = session
     context.user_data["coop_pending"] = {"session_id": session_id, "stage": "name"}
 
@@ -612,6 +618,7 @@ async def cmd_coop_test(
     }
     selected_continent = context.user_data.get("continent")
     if selected_continent:
+        session.continent_label = selected_continent
         session.continent_filter = (
             None if selected_continent == "Весь мир" else selected_continent
         )
@@ -656,17 +663,50 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         else:
             context.user_data.pop("coop_pending", None)
-            await update.message.reply_text(
-                "Имя сохранено. Выберите континент.",
-                reply_markup=coop_continent_kb(session_id),
-            )
-            first_player = session.players[0]
-            first_chat = session.player_chats[first_player]
-            await context.bot.send_message(
-                first_chat,
-                "Второй игрок присоединился. Выберите континент.",
-                reply_markup=coop_continent_kb(session_id),
-            )
+            if session.continent_filter is not None or session.continent_label:
+                continent_name = (
+                    session.continent_label
+                    or session.continent_filter
+                    or "Весь мир"
+                )
+                await update.message.reply_text(
+                    (
+                        "Имя сохранено. Континент: "
+                        f"{continent_name}. Выберите сложность соперника."
+                    ),
+                    reply_markup=coop_difficulty_kb(session_id, user_id),
+                )
+                for pid in session.players:
+                    if pid == user_id:
+                        continue
+                    chat_id = session.player_chats.get(pid)
+                    if not chat_id:
+                        continue
+                    try:
+                        await context.bot.send_message(
+                            chat_id,
+                            (
+                                "Второй игрок присоединился. Континент: "
+                                f"{continent_name}. Выберите сложность соперника."
+                            ),
+                            reply_markup=coop_difficulty_kb(session_id, pid),
+                        )
+                    except (TelegramError, HTTPError) as e:
+                        logger.warning(
+                            "Failed to send difficulty selection: %s", e
+                        )
+            else:
+                await update.message.reply_text(
+                    "Имя сохранено. Выберите континент.",
+                    reply_markup=coop_continent_kb(session_id),
+                )
+                first_player = session.players[0]
+                first_chat = session.player_chats[first_player]
+                await context.bot.send_message(
+                    first_chat,
+                    "Второй игрок присоединился. Выберите континент.",
+                    reply_markup=coop_continent_kb(session_id),
+                )
 
 
 async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -703,6 +743,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 pass
             return
         session.continent_filter = None if continent == "Весь мир" else continent
+        session.continent_label = continent
         await q.answer()
         try:
             await q.edit_message_reply_markup(None)
@@ -741,6 +782,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             _, session = _find_user_session_global(context, update.effective_user.id)
             if session:
                 session.continent_filter = continent_filter
+                session.continent_label = continent
         return
 
     action = parts[1]
