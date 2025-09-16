@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 def test_admin_button_visible_only_for_admin(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     import importlib
     hm = importlib.reload(__import__("bot.handlers_menu", fromlist=["*"]))
     hm.ADMIN_ID = 1
@@ -41,6 +42,7 @@ def test_admin_button_visible_only_for_admin(monkeypatch):
 
 def test_coop_flow_steps(monkeypatch):
     import importlib
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
     monkeypatch.setenv("ADMIN_ID", "99")
     hco.ADMIN_ID = 99
@@ -120,20 +122,23 @@ def test_coop_flow_steps(monkeypatch):
 
 def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     import importlib
-
+    async def no_sleep(*args, **kwargs):
+        pass
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     monkeypatch.setenv("ADMIN_ID", "5")
     hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
     hco.ADMIN_ID = 5
     hco.DUMMY_ACCURACY = 1.0
 
-    monkeypatch.setattr(hco.DATA, "countries", lambda continent: ["France"])
+    monkeypatch.setattr(hco.DATA, "countries", lambda continent: ["Франция"])
 
     def fake_make_card_question(data, item, mode, continent):
         return {
             "prompt": "Q?",
             "options": ["A", "B", "C", "D"],
             "correct": "A",
-            "country": "France",
+            "country": "Франция",
             "capital": "A",
             "type": "country_to_capital",
         }
@@ -173,9 +178,9 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     assert session.continent_filter == "Азия"
     assert "coop_pending" not in context.user_data
 
-    # Question sent immediately to the human player
-    assert bot.sent[0][0] == 77
-    assert "Ход" in bot.sent[0][1]
+    # Question sent after the intro message to the human player
+    assert bot.sent[1][0] == 77
+    assert "Ход" in bot.sent[1][1]
 
     # Simulate a wrong human answer -> dummy should answer automatically and finish the game
     asyncio.run(hco._next_turn(context, session, False))
@@ -188,6 +193,10 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
 
 
 def test_bot_accuracy(monkeypatch):
+    async def no_sleep(*args, **kwargs):
+        pass
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
     monkeypatch.setenv("ADMIN_ID", "1")
     import importlib
     hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))

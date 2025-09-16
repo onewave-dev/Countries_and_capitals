@@ -7,6 +7,10 @@ def _setup_session(monkeypatch, continent=None):
     import bot.handlers_coop as hco
     hco = importlib.reload(hco)
     monkeypatch.setattr(hco, "coop_answer_kb", lambda *args, **kwargs: None)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    async def no_sleep(*args, **kwargs):
+        pass
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
 
     class DummyBot:
         def __init__(self):
@@ -73,9 +77,9 @@ def test_continent_prompt_after_names(monkeypatch):
 def test_question_stays_on_wrong_answer(monkeypatch):
     hco, session, context, bot = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))
-    first = bot.sent[0][1]
+    first = bot.sent[2][1]
     asyncio.run(hco._next_turn(context, session, False))
-    second = bot.sent[2][1]
+    second = bot.sent[4][1]
     assert first.split("\n", 1)[1] == second.split("\n", 1)[1]
     assert len(session.remaining_pairs) > 0
 
