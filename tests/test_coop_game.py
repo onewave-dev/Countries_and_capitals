@@ -176,6 +176,39 @@ def test_turn_order_cycles(monkeypatch):
     assert question_chats == [1, 2, 2, 1, 1, 2]
 
 
+def test_second_player_answer_advances_pair_for_bot(monkeypatch):
+    hco, session, context, bot, _ = _setup_session(monkeypatch, continent="Европа")
+    asyncio.run(hco._start_game(context, session))
+    assert len(session.remaining_pairs) >= 2
+
+    first_prompt = session.current_pair["prompt"]
+    second_prompt = session.remaining_pairs[1]["prompt"]
+
+    asyncio.run(hco._next_turn(context, session, False))
+    assert session.turn_index == 1
+
+    monkeypatch.setattr(hco.random, "random", lambda: 1.0)
+    asyncio.run(hco._next_turn(context, session, False))
+    assert session.turn_index == 0
+    assert session.current_pair["prompt"] == first_prompt
+
+    asyncio.run(hco._next_turn(context, session, False))
+    assert session.turn_index == 1
+    assert session.current_pair["prompt"] == first_prompt
+
+    monkeypatch.setattr(hco.random, "random", lambda: 0.0)
+    captured_prompts: list[str] = []
+
+    async def fake_broadcast(context_arg, session_arg, name, projected_total=None):
+        captured_prompts.append(session_arg.current_pair["prompt"])
+
+    monkeypatch.setattr(hco, "_broadcast_correct_answer", fake_broadcast)
+
+    asyncio.run(hco._next_turn(context, session, True))
+
+    assert captured_prompts and captured_prompts[0] == second_prompt
+
+
 def test_world_mode_limit(monkeypatch):
     hco, session, context, bot, _ = _setup_session(monkeypatch, continent=None)
     monkeypatch.setattr(hco.random, "sample", lambda seq, k: list(seq)[:k])

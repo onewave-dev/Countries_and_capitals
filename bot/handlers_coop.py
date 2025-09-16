@@ -363,26 +363,17 @@ async def _next_turn(
         return
 
     current_player = session.players[session.turn_index]
-    remove_now = False
-    remove_after_bot = False
 
     score_changed = False
 
     if correct:
         session.player_stats[current_player] = session.player_stats.get(current_player, 0) + 1
         score_changed = True
-        next_index = session.turn_index + 1
-        if next_index < len(session.players):
-            remove_now = True
-        else:
-            remove_after_bot = True
-
-    session.turn_index += 1
-
-    if remove_now:
         if session.remaining_pairs:
             session.remaining_pairs.pop(0)
         session.current_pair = None
+
+    session.turn_index += 1
 
     if session.turn_index == len(session.players):
         if not session.current_pair and session.remaining_pairs:
@@ -409,8 +400,7 @@ async def _next_turn(
                     await context.bot.send_message(chat_id, text, parse_mode="HTML")
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to notify about bot move: %s", e)
-
-        if remove_after_bot or bot_correct:
+        if bot_correct:
             if session.remaining_pairs:
                 session.remaining_pairs.pop(0)
             session.current_pair = None
