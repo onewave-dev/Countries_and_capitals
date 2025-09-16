@@ -236,19 +236,38 @@ async def _next_turn(
 ) -> None:
     """Advance to the next turn. Handles bot moves when needed."""
 
+    if not session.players:
+        return
+
     current_player = session.players[session.turn_index]
+    remove_now = False
+    remove_after_bot = False
+
     if correct:
         session.player_stats[current_player] = session.player_stats.get(current_player, 0) + 1
+        next_index = session.turn_index + 1
+        if next_index < len(session.players):
+            remove_now = True
+        else:
+            remove_after_bot = True
+
+    session.turn_index += 1
+
+    if remove_now:
         if session.remaining_pairs:
             session.remaining_pairs.pop(0)
         session.current_pair = None
-        session.turn_index = (session.turn_index + 1) % len(session.players)
-    else:
-        session.turn_index += 1
 
-    # Bot's move
-    if session.turn_index >= len(session.players):
-        bot_correct = random.random() < ACCURACY.get(session.difficulty, 0.5)
+    if session.turn_index == len(session.players):
+        if not session.current_pair and session.remaining_pairs:
+            session.current_pair = session.remaining_pairs[0]
+        if not session.current_pair:
+            session.turn_index = 0
+            await _finish_game(context, session)
+            return
+
+        bot_accuracy = ACCURACY.get(session.difficulty, 0.5)
+        bot_correct = random.random() < bot_accuracy
         if bot_correct:
             session.bot_stats += 1
             correct_display = _format_correct(session.current_pair)
@@ -256,29 +275,36 @@ async def _next_turn(
                 "Бот отвечает верно!\n"
                 f"Правильный ответ: <b>{correct_display}</b>"
             )
+        else:
+            text = "Бот отвечает неверно."
+
+        for pid in session.players:
+            chat_id = session.player_chats.get(pid)
+            if not chat_id:
+                continue
+            try:
+                await context.bot.send_message(chat_id, text, parse_mode="HTML")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to notify about bot move: %s", e)
+
+        if remove_after_bot or bot_correct:
             if session.remaining_pairs:
                 session.remaining_pairs.pop(0)
             session.current_pair = None
-        else:
-            text = "Бот отвечает неверно."
-        for pid in session.players:
-            chat_id = session.player_chats.get(pid)
-            if chat_id:
-                try:
-                    await context.bot.send_message(chat_id, text, parse_mode="HTML")
-                except (TelegramError, HTTPError) as e:
-                    logger.warning("Failed to notify about bot move: %s", e)
         session.turn_index = 0
 
+    if not session.remaining_pairs:
+        await _finish_game(context, session)
+        return
+
+    logger.debug(
+        "Delaying next cooperative question for session %s by 2 seconds",
+        session.session_id,
+    )
+    await asyncio.sleep(2)
     if session.remaining_pairs:
-        logger.debug(
-            "Delaying next cooperative question for session %s by 2 seconds",
-            session.session_id,
-        )
-        await asyncio.sleep(2)
-        if session.remaining_pairs:
-            await _ask_current_pair(context, session)
-            return
+        await _ask_current_pair(context, session)
+        return
 
     await _finish_game(context, session)
 
