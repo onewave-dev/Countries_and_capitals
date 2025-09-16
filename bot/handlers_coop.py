@@ -39,7 +39,7 @@ except ValueError:
     DUMMY_ACCURACY = 0.7
 
 # Probability of the bot answering correctly depending on the difficulty.
-ACCURACY = {"easy": 0.5, "medium": 0.7, "hard": 0.9}
+ACCURACY = {"easy": 0.7, "medium": 0.8, "hard": 0.9}
 
 
 # ===== Helpers =====
@@ -380,7 +380,7 @@ async def _next_turn(
             await _finish_game(context, session)
             return
 
-        bot_accuracy = ACCURACY.get(session.difficulty, 0.5)
+        bot_accuracy = ACCURACY.get(session.difficulty, 0.7)
         bot_correct = random.random() < bot_accuracy
         if bot_correct:
             session.bot_stats += 1
