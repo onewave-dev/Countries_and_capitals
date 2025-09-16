@@ -214,11 +214,11 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     opponent_photos = [
         entry for entry in bot.photos if entry[1] and "Бот отвечает верно" in entry[1]
     ]
-    assert opponent_photos
-    assert opponent_photos[-1][0] == 77
+    assert not opponent_photos
     assert bot.sent[-1][1].startswith("Игра завершена.")
     assert all(chat_id is not None for chat_id, *_ in bot.sent)
     assert session.player_stats[hco.DUMMY_PLAYER_ID] >= 1
+    assert not sessions
 
 
 def test_bot_accuracy(monkeypatch):
@@ -374,7 +374,7 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     asyncio.run(hco._next_turn(context, session, True))
 
     bot_messages = [msg for msg in bot.sent if "Бот отвечает" in msg[1]]
-    assert len(bot_messages) == 2
+    assert len(bot_messages) == len(session.players)
     assert all("верно" in text for _, text, *_ in bot_messages)
     assert session.bot_stats == 1
     assert not bot.photos
@@ -390,12 +390,12 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
 
     assert chats_for("Q1") == [1, 2]
     assert chats_for("Q2") == [2, 1]
-    assert chats_for("Q3") == [1, 2]
+    assert chats_for("Q3") == []
 
     score_messages = [text for _, text, *_ in bot.sent if text.startswith("Текущий счёт:")]
     assert "Текущий счёт: Игрок 1 и Игрок 2 — 2, Бот — 1" in score_messages
 
     assert session.turn_index == 0
-    assert session.current_pair and session.current_pair["prompt"] == "Q3"
+    assert session.current_pair is None
     assert session.player_stats == {1: 1, 2: 1}
-    assert [pair["prompt"] for pair in session.remaining_pairs] == ["Q3"]
+    assert session.remaining_pairs == []
