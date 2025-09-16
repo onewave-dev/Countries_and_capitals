@@ -14,10 +14,12 @@ class DummyBot:
 
 
 def test_quit_clears_sessions_and_notifies_user():
+    chat_data = {}
     context = SimpleNamespace(
         bot=DummyBot(),
         user_data={"card_session": CardSession(user_id=1)},
-        application=SimpleNamespace(bot_data={}),
+        chat_data=chat_data,
+        application=SimpleNamespace(chat_data={100: chat_data}),
     )
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=1),
@@ -33,10 +35,13 @@ def test_quit_clears_sessions_and_notifies_user():
 
 def test_quit_ends_coop_session_for_all_players():
     coop = CoopSession(session_id="abc", players=[1, 2], player_chats={1: 100, 2: 200})
+    chat_data_100 = {"sessions": {"abc": coop}}
+    chat_data_200 = {"sessions": {"abc": coop}}
     context = SimpleNamespace(
         bot=DummyBot(),
         user_data={},
-        application=SimpleNamespace(bot_data={"coop_sessions": {"abc": coop}}),
+        chat_data=chat_data_100,
+        application=SimpleNamespace(chat_data={100: chat_data_100, 200: chat_data_200}),
     )
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=1),
@@ -46,7 +51,8 @@ def test_quit_ends_coop_session_for_all_players():
 
     asyncio.run(cmd_quit(update, context))
 
-    assert not context.application.bot_data["coop_sessions"], "Session was not removed"
+    assert not chat_data_100["sessions"], "Session was not removed"
+    assert not chat_data_200["sessions"], "Session was not removed for partner"
     assert set(context.bot.sent) == {
         (100, SESSION_ENDED),
         (200, SESSION_ENDED),

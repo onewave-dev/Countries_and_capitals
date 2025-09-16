@@ -16,7 +16,14 @@ def test_admin_button_visible_only_for_admin(monkeypatch):
             self.sent.append((chat_id, text, reply_markup))
 
     bot = DummyBot()
-    context = SimpleNamespace(bot=bot, args=[], user_data={}, application=SimpleNamespace(bot_data={}))
+    application = SimpleNamespace(chat_data={1: {}, 2: {}})
+    context = SimpleNamespace(
+        bot=bot,
+        args=[],
+        user_data={},
+        chat_data=application.chat_data[1],
+        application=application,
+    )
     update = SimpleNamespace(effective_chat=SimpleNamespace(id=1), effective_user=SimpleNamespace(id=1))
     asyncio.run(hm.cmd_start(update, context))
     markup = bot.sent[0][2]
@@ -25,6 +32,7 @@ def test_admin_button_visible_only_for_admin(monkeypatch):
 
     bot.sent.clear()
     update2 = SimpleNamespace(effective_chat=SimpleNamespace(id=2), effective_user=SimpleNamespace(id=2))
+    context.chat_data = application.chat_data[2]
     asyncio.run(hm.cmd_start(update2, context))
     markup2 = bot.sent[0][2]
     buttons2 = [btn.text for row in markup2.inline_keyboard for btn in row]
@@ -49,10 +57,13 @@ def test_coop_flow_steps(monkeypatch):
     session = hco.CoopSession(session_id="s1")
     session.players = [1, 2]
     session.player_chats = {1: 1, 2: 2}
+    chat_data_1 = {"sessions": {"s1": session}}
+    chat_data_2 = {"sessions": {"s1": session}}
     context = SimpleNamespace(
         bot=bot,
         user_data={"coop_pending": {"session_id": "s1", "stage": "name"}},
-        application=SimpleNamespace(bot_data={"coop_sessions": {"s1": session}}),
+        chat_data=chat_data_2,
+        application=SimpleNamespace(chat_data={1: chat_data_1, 2: chat_data_2}),
     )
 
     async def reply_text(text, reply_markup=None):
@@ -138,10 +149,12 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
+    chat_data = {}
     context = SimpleNamespace(
         bot=bot,
         user_data={"continent": "Азия"},
-        application=SimpleNamespace(bot_data={}),
+        chat_data=chat_data,
+        application=SimpleNamespace(chat_data={77: chat_data}),
     )
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=5, full_name="Админ"),
@@ -150,7 +163,7 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     )
 
     asyncio.run(hco.cmd_coop_test(update, context))
-    sessions = context.application.bot_data.get("coop_sessions", {})
+    sessions = context.chat_data.get("sessions", {})
     assert len(sessions) == 1
     session = next(iter(sessions.values()))
     assert session.players == [5, hco.DUMMY_PLAYER_ID]
@@ -190,7 +203,13 @@ def test_bot_accuracy(monkeypatch):
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
-    context = SimpleNamespace(bot=bot, user_data={}, application=SimpleNamespace(bot_data={}))
+    chat_data = {}
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={},
+        chat_data=chat_data,
+        application=SimpleNamespace(chat_data={1: chat_data}),
+    )
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=1),
         effective_chat=SimpleNamespace(id=1, type="private"),
@@ -212,7 +231,7 @@ def test_bot_accuracy(monkeypatch):
     monkeypatch.setattr(hco.random, "random", lambda: 0.0)
 
     asyncio.run(hco.cmd_coop_test(update, context))
-    session = next(iter(context.application.bot_data["coop_sessions"].values()))
+    session = next(iter(context.chat_data["sessions"].values()))
 
     # Player answers wrong so that the bot takes a turn
     asyncio.run(hco._next_turn(context, session, False))

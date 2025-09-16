@@ -42,9 +42,59 @@ ACCURACY = {"easy": 0.5, "medium": 0.7, "hard": 0.9}
 
 
 def _get_sessions(context: ContextTypes.DEFAULT_TYPE) -> Dict[str, CoopSession]:
-    """Return the global coop sessions mapping."""
+    """Return cooperative sessions stored in the current chat."""
 
-    return context.application.bot_data.setdefault("coop_sessions", {})  # type: ignore[arg-type]
+    return context.chat_data.setdefault("sessions", {})
+
+
+def _iter_session_maps(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> list[Dict[str, CoopSession]]:
+    """Return unique session mappings from all known chats."""
+
+    seen: set[int] = set()
+    mappings: list[Dict[str, CoopSession]] = []
+
+    chat_data = getattr(context, "chat_data", None)
+    if isinstance(chat_data, dict):
+        current = chat_data.get("sessions")
+        if isinstance(current, dict):
+            mappings.append(current)
+            seen.add(id(current))
+
+    application = getattr(context, "application", None)
+    app_chat_data = getattr(application, "chat_data", None)
+    if isinstance(app_chat_data, dict):
+        for data in app_chat_data.values():
+            if not isinstance(data, dict):
+                continue
+            sessions = data.get("sessions")
+            if isinstance(sessions, dict) and id(sessions) not in seen:
+                mappings.append(sessions)
+                seen.add(id(sessions))
+
+    return mappings
+
+
+def _find_session_global(
+    context: ContextTypes.DEFAULT_TYPE, session_id: str
+) -> CoopSession | None:
+    """Find a cooperative session by identifier across chats."""
+
+    for sessions in _iter_session_maps(context):
+        session = sessions.get(session_id)
+        if session:
+            return session
+    return None
+
+
+def _remove_session(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession
+) -> None:
+    """Remove ``session`` from every chat's storage."""
+
+    for sessions in _iter_session_maps(context):
+        sessions.pop(session.session_id, None)
 
 
 def _find_user_session(
@@ -53,6 +103,18 @@ def _find_user_session(
     for sid, sess in sessions.items():
         if user_id in sess.players:
             return sid, sess
+    return None, None
+
+
+def _find_user_session_global(
+    context: ContextTypes.DEFAULT_TYPE, user_id: int
+) -> Tuple[str, CoopSession] | tuple[None, None]:
+    """Locate a session that already involves ``user_id``."""
+
+    for sessions in _iter_session_maps(context):
+        sid, session = _find_user_session(sessions, user_id)
+        if session:
+            return sid, session
     return None, None
 
 
@@ -224,8 +286,7 @@ async def _next_turn(
 async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
     """Send final statistics and remove the session."""
 
-    sessions = _get_sessions(context)
-    sessions.pop(session.session_id, None)
+    _remove_session(context, session)
     lines = ["Игра завершена."]
     for pid in session.players:
         name = session.player_names.get(pid, f"Игрок {pid}")
@@ -278,7 +339,7 @@ async def cmd_coop_capitals(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     sessions = _get_sessions(context)
-    _, existing = _find_user_session(sessions, user.id)
+    _, existing = _find_user_session_global(context, user.id)
     if existing:
         try:
             if update.message:
@@ -325,11 +386,12 @@ async def cmd_coop_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     session_id = context.args[0]
     sessions = _get_sessions(context)
-    session = sessions.get(session_id)
+    session = _find_session_global(context, session_id)
     if not session:
         await update.message.reply_text("Матч не найден")
         return
 
+    sessions[session_id] = session
     user_id = update.effective_user.id
     if user_id in session.players:
         await update.message.reply_text("Вы уже участвуете в этом матче")
@@ -348,13 +410,13 @@ async def cmd_coop_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def cmd_coop_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancel the current cooperative match for the user."""
 
-    sessions = _get_sessions(context)
-    sid, session = _find_user_session(sessions, update.effective_user.id)
+    _get_sessions(context)
+    _, session = _find_user_session_global(context, update.effective_user.id)
     if not session:
         await update.message.reply_text("Активных матчей не найдено")
         return
 
-    sessions.pop(sid, None)
+    _remove_session(context, session)
     for pid in session.players:
         chat_id = session.player_chats.get(pid)
         if not chat_id:
@@ -421,8 +483,11 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     sessions = _get_sessions(context)
     session = sessions.get(session_id)
     if not session:
-        context.user_data.pop("coop_pending", None)
-        return
+        session = _find_session_global(context, session_id)
+        if not session:
+            context.user_data.pop("coop_pending", None)
+            return
+        sessions[session_id] = session
 
     user_id = update.effective_user.id
 
@@ -459,10 +524,19 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     parts = q.data.split(":")
     sessions = _get_sessions(context)
 
+    def get_session(session_id: str) -> CoopSession | None:
+        session = sessions.get(session_id)
+        if session:
+            return session
+        session = _find_session_global(context, session_id)
+        if session:
+            sessions[session_id] = session
+        return session
+
     if len(parts) >= 2 and parts[1] == "cont":
         session_id = parts[2]
         continent = parts[3]
-        session = sessions.get(session_id)
+        session = get_session(session_id)
         if not session:
             await q.answer()
             return
@@ -512,7 +586,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         else:
             await cmd_coop_capitals(update, context)
-            sid, session = _find_user_session(sessions, update.effective_user.id)
+            _, session = _find_user_session_global(context, update.effective_user.id)
             if session:
                 session.continent_filter = continent_filter
         return
@@ -531,7 +605,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session_id = parts[2]
         player_id = int(parts[3])
         difficulty = parts[4]
-        session = sessions.get(session_id)
+        session = get_session(session_id)
         if not session:
             await q.answer()
             return
@@ -562,7 +636,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session_id = parts[2]
     player_id = int(parts[3])
     idx = int(parts[4])
-    session = sessions.get(session_id)
+    session = get_session(session_id)
     if not session or not session.current_pair:
         await q.answer()
         return

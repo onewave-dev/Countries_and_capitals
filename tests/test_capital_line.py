@@ -172,8 +172,11 @@ def test_coop_bot_move_mentions_capital(monkeypatch):
             "correct": "Канада",
         }
         session.remaining_pairs = [session.current_pair]
+        chat_data = {"sessions": {"s1": session}}
         context = SimpleNamespace(
-            bot=bot, application=SimpleNamespace(bot_data={"coop_sessions": {"s1": session}})
+            bot=bot,
+            chat_data=chat_data,
+            application=SimpleNamespace(chat_data={1: chat_data}),
         )
         monkeypatch.setattr(hco.random, "random", lambda: 0.0)
         await hco._next_turn(context, session, False)

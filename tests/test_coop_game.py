@@ -17,17 +17,18 @@ def _setup_session(monkeypatch, continent=None):
             return SimpleNamespace(message_id=len(self.sent))
 
     bot = DummyBot()
-    context = SimpleNamespace(
-        bot=bot,
-        application=SimpleNamespace(bot_data={}),
-    )
-
     session = hco.CoopSession(session_id="s1")
     session.players = [1, 2]
     session.player_chats = {1: 1, 2: 2}
     session.player_names = {1: "A", 2: "B"}
     session.continent_filter = continent
-    context.application.bot_data["coop_sessions"] = {"s1": session}
+    chat_data_1 = {"sessions": {"s1": session}}
+    chat_data_2 = {"sessions": {"s1": session}}
+    context = SimpleNamespace(
+        bot=bot,
+        chat_data=chat_data_1,
+        application=SimpleNamespace(chat_data={1: chat_data_1, 2: chat_data_2}),
+    )
     return hco, session, context, bot
 
 
@@ -47,10 +48,13 @@ def test_continent_prompt_after_names(monkeypatch):
     session = hco.CoopSession(session_id="s1")
     session.players = [1, 2]
     session.player_chats = {1: 1, 2: 2}
+    chat_data_1 = {"sessions": {"s1": session}}
+    chat_data_2 = {"sessions": {"s1": session}}
     context = SimpleNamespace(
         bot=bot,
         user_data={"coop_pending": {"session_id": "s1", "stage": "name"}},
-        application=SimpleNamespace(bot_data={"coop_sessions": {"s1": session}}),
+        chat_data=chat_data_2,
+        application=SimpleNamespace(chat_data={1: chat_data_1, 2: chat_data_2}),
     )
 
     async def reply_text(text, reply_markup=None):
