@@ -303,7 +303,13 @@ def test_invite_stage_sends_users_shared_invitation(monkeypatch):
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=1),
         message=SimpleNamespace(
-            users_shared=SimpleNamespace(user_ids=[888]),
+            users_shared=SimpleNamespace(
+                user_ids=[888],
+                users=[
+                    SimpleNamespace(user_id=999),
+                    SimpleNamespace(user_id=None),
+                ],
+            ),
             user_shared=None,
             contact=None,
             text=None,
@@ -314,9 +320,10 @@ def test_invite_stage_sends_users_shared_invitation(monkeypatch):
     asyncio.run(hco.msg_coop(update, context))
 
     assert join_calls == ["s1"]
-    assert bot.sent and bot.sent[0][0] == 888
+    assert bot.sent and bot.sent[0][0] == 999
     assert bot.sent[0][2].session == "s1"
     assert replies and "Приглашение отправлено" in replies[0][0]
+    assert all("нет Telegram" not in text for text, _ in replies)
     assert context.user_data["coop_pending"]["stage"] == "invite"
 
 

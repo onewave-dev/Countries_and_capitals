@@ -811,6 +811,22 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
         users_shared = getattr(message, "users_shared", None)
+        users_shared_users = (
+            getattr(users_shared, "users", None)
+            if users_shared is not None
+            else None
+        )
+        shared_users_from_users = None
+        if users_shared_users:
+            try:
+                iterator = iter(users_shared_users)
+            except TypeError:
+                iterator = iter([users_shared_users])
+            for shared_user in iterator:
+                candidate_id = getattr(shared_user, "user_id", None)
+                if candidate_id:
+                    shared_users_from_users = candidate_id
+                    break
         users_shared_ids = (
             getattr(users_shared, "user_ids", None)
             if users_shared is not None
@@ -831,7 +847,12 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         shared_user_id = getattr(user_shared, "user_id", None) if user_shared else None
         contact = getattr(message, "contact", None)
         contact_user_id = getattr(contact, "user_id", None) if contact else None
-        target_user_id = shared_users_user_id or shared_user_id or contact_user_id
+        target_user_id = (
+            shared_users_from_users
+            or shared_users_user_id
+            or shared_user_id
+            or contact_user_id
+        )
 
         if target_user_id:
             inviter_name = session.player_names.get(user_id, "Ваш друг")
@@ -856,7 +877,9 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
             return
 
-        if users_shared is not None and not shared_users_user_id:
+        if users_shared is not None and not (
+            shared_users_from_users or shared_users_user_id
+        ):
             await message.reply_text(
                 "У этого контакта нет Telegram-аккаунта. Передайте ссылку вручную.",
             )
