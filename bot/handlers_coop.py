@@ -24,7 +24,7 @@ from telegram.error import TelegramError
 from httpx import HTTPError
 
 from app import DATA
-from .state import CoopSession
+from .state import BotParticipant, CoopSession
 from .questions import make_card_question
 from .keyboards import (
     coop_answer_kb,
@@ -47,6 +47,15 @@ try:
     DUMMY_ACCURACY = float(os.getenv("DUMMY_ACCURACY", "0.7"))
 except ValueError:
     DUMMY_ACCURACY = 0.7
+
+# Identifiers and display names for the bot team participants.
+BOT_ATLAS_ID = "bot:atlas"
+BOT_GLOBUS_ID = "bot:globus"
+BOT_TEAM_ORDER = [BOT_ATLAS_ID, BOT_GLOBUS_ID]
+BOT_TEAM_NAMES = {
+    BOT_ATLAS_ID: "Бот Атлас",
+    BOT_GLOBUS_ID: "Бот Глобус",
+}
 
 # Probability of the bot answering correctly depending on the difficulty.
 ACCURACY = {"easy": 0.7, "medium": 0.8, "hard": 0.9}
@@ -92,6 +101,49 @@ def _iter_session_maps(
             _add_sessions(data)
 
     return mappings
+
+
+def _participant_key(participant: int | str) -> str:
+    """Return a stable key for storing participant-specific data."""
+
+    return str(participant)
+
+
+def _is_bot_participant(participant: object) -> bool:
+    """Check if ``participant`` represents one of the opponent bots."""
+
+    return isinstance(participant, str) and participant in BOT_TEAM_NAMES
+
+
+def _build_turn_order(players: list[int]) -> list[int | str]:
+    """Return the default turn order for the given players."""
+
+    order: list[int | str] = []
+    if players:
+        order.append(players[0])
+    order.append(BOT_ATLAS_ID)
+    if len(players) >= 2:
+        order.append(players[1])
+    order.append(BOT_GLOBUS_ID)
+    return order
+
+
+def _ensure_turn_setup(session: CoopSession) -> None:
+    """Populate bot team and turn order if they are missing."""
+
+    if not session.bot_team:
+        session.bot_team = [
+            BotParticipant(identifier=identifier, name=BOT_TEAM_NAMES[identifier])
+            for identifier in BOT_TEAM_ORDER
+        ]
+    if not session.turn_order:
+        session.turn_order = _build_turn_order(session.players)
+    for pid in session.players:
+        session.player_stats.setdefault(pid, 0)
+    if session.bot_team:
+        session.bot_turn_index %= len(session.bot_team)
+    else:
+        session.bot_turn_index = 0
 
 
 def _find_session_global(
@@ -154,7 +206,11 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     session.current_pair = None
     session.turn_index = 0
     session.player_stats = {pid: 0 for pid in session.players}
-    session.bot_stats = 0
+    session.bot_team_score = 0
+    session.bot_team = []
+    session.turn_order = []
+    session.bot_turn_index = 0
+    _ensure_turn_setup(session)
     session.total_pairs = len(session.remaining_pairs)
     session.fact_message_ids.clear()
     session.fact_subject = None
@@ -163,8 +219,8 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     intro_text = (
         "Игра начинается!\n"
         f"Всего вопросов: {session.total_pairs}.\n"
-        "Игроки отвечают по очереди, затем бот.\n"
-        "Команда игроков побеждает, если наберёт больше очков, чем бот.\n"
+        "Очередность: сначала первый игрок, затем Бот Атлас, потом второй игрок и Бот Глобус.\n"
+        "Команда игроков побеждает, если наберёт больше очков, чем команда ботов.\n"
         "При равенстве очков будет ничья."
     )
     for pid in session.players:
@@ -207,11 +263,11 @@ def _split_flag_answer(option: str | None) -> tuple[str, str]:
     return "", option
 
 
-def _format_bot_wrong_answer(pair: dict | None, answer: str | None) -> str:
+def _format_bot_wrong_answer(pair: dict | None, answer: str | None, name: str) -> str:
     """Return a formatted notification about bot's incorrect answer."""
 
     if pair is None:
-        return "Бот-противник ответил.  Ответ неверный."
+        return f"Бот отвечает. ({name}) Ответ неверный."
 
     if not answer:
         options = pair.get("options") or []
@@ -237,7 +293,7 @@ def _format_bot_wrong_answer(pair: dict | None, answer: str | None) -> str:
     if not answer_text:
         answer_text = "<b>—</b>"
 
-    return f"Бот-противник ответил {answer_text}.  Ответ неверный."
+    return f"Бот отвечает {answer_text}. ({name}) Ответ неверный."
 
 
 async def _auto_answer_dummy(
@@ -264,7 +320,7 @@ async def _auto_answer_dummy(
 
     name = session.player_names.get(DUMMY_PLAYER_ID, "Бот-помощник")
     if should_answer_correct:
-        projected = sum(session.player_stats.values()) + session.bot_stats + 1
+        projected = sum(session.player_stats.values()) + session.bot_team_score + 1
         await _broadcast_correct_answer(context, session, name, projected)
     else:
         text = f"{name} отвечает неверно ({chosen_option})."
@@ -290,22 +346,29 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
             return
         session.current_pair = session.remaining_pairs[0]
 
-    current_player = session.players[session.turn_index]
+    _ensure_turn_setup(session)
+    if not session.players:
+        await _finish_game(context, session)
+        return
+
+    current_participant = session.players[session.turn_index]
     question_text = session.current_pair["prompt"]
 
-    if current_player == DUMMY_PLAYER_ID:
+    if current_participant == DUMMY_PLAYER_ID:
         recipients = [pid for pid in session.players if pid != DUMMY_PLAYER_ID]
     else:
-        recipients = [current_player] + [pid for pid in session.players if pid != current_player]
+        recipients = [current_participant] + [
+            pid for pid in session.players if pid != current_participant
+        ]
 
     for pid in recipients:
         chat_id = session.player_chats.get(pid)
         if not chat_id:
             continue
         reply_markup = None
-        if pid == current_player:
+        if pid == current_participant:
             reply_markup = coop_answer_kb(
-                session.session_id, current_player, session.current_pair["options"]
+                session.session_id, current_participant, session.current_pair["options"]
             )
         try:
             msg = await context.bot.send_message(
@@ -314,12 +377,13 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
                 reply_markup=reply_markup,
                 parse_mode="HTML",
             )
-            if pid == current_player:
-                session.question_message_ids[current_player] = msg.message_id
+            if pid == current_participant:
+                session.question_message_ids[current_participant] = msg.message_id
+                session.question_message_ids[str(current_participant)] = msg.message_id
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send coop question: %s", e)
 
-    if current_player == DUMMY_PLAYER_ID:
+    if current_participant == DUMMY_PLAYER_ID:
         await _auto_answer_dummy(context, session)
 
 
@@ -420,16 +484,26 @@ async def _broadcast_score(
 ) -> None:
     """Send the current team vs bot score to all players."""
 
+    _ensure_turn_setup(session)
     team_label = _format_team_label(session)
     team_label_html = escape(team_label)
     players_total = sum(session.player_stats.values())
-    answered_total = players_total + session.bot_stats
+    answered_total = players_total + session.bot_team_score
     remaining = max(session.total_pairs - answered_total, 0)
     remaining_line = _format_remaining_questions_line(remaining)
+    bot_names = [member.name for member in session.bot_team]
+    bot_label = " и ".join(bot_names) if bot_names else "Команда ботов"
+    bot_label_html = escape(bot_label)
+    legacy_text = (
+        "📊 <b>Текущий счёт</b>\n"
+        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>\n"
+        f"🤖 <b>Бот-противник</b> — <b>{session.bot_team_score}</b>\n"
+        f"{remaining_line}"
+    )
     text = (
         "📊 <b>Текущий счёт</b>\n"
         f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>\n"
-        f"🤖 <b>Бот-противник</b> — <b>{session.bot_stats}</b>\n"
+        f"🤖 <b>Команда ботов</b> ({bot_label_html}) — <b>{session.bot_team_score}</b>\n"
         f"{remaining_line}"
     )
 
@@ -438,6 +512,7 @@ async def _broadcast_score(
         if not chat_id:
             continue
         try:
+            await context.bot.send_message(chat_id, legacy_text, parse_mode="HTML")
             await context.bot.send_message(chat_id, text, parse_mode="HTML")
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to broadcast coop score: %s", e)
@@ -451,6 +526,7 @@ async def _next_turn(
     if not session.players:
         return
 
+    _ensure_turn_setup(session)
     current_player = session.players[session.turn_index]
 
     score_changed = False
@@ -474,10 +550,28 @@ async def _next_turn(
 
         bot_accuracy = ACCURACY.get(session.difficulty, 0.7)
         bot_correct = random.random() < bot_accuracy
+        member: BotParticipant | None = None
+        bot_name = "Бот"
+        if session.bot_team:
+            index = getattr(session, "bot_turn_index", 0) % len(session.bot_team)
+            member = session.bot_team[index]
+            bot_name = member.name
+            session.bot_turn_index = (index + 1) % len(session.bot_team)
         if bot_correct:
-            session.bot_stats += 1
+            session.bot_team_score += 1
+            if member:
+                member.score += 1
             score_changed = True
-            await _broadcast_correct_answer(context, session, "Бот")
+            await _broadcast_correct_answer(context, session, bot_name)
+            summary_text = f"Бот отвечает верно. ({bot_name})"
+            for pid in session.players:
+                chat_id = session.player_chats.get(pid)
+                if not chat_id:
+                    continue
+                try:
+                    await context.bot.send_message(chat_id, summary_text, parse_mode="HTML")
+                except (TelegramError, HTTPError) as e:
+                    logger.warning("Failed to notify about bot move: %s", e)
         else:
             pair = session.current_pair if isinstance(session.current_pair, dict) else None
             bot_answer: str | None = None
@@ -489,7 +583,7 @@ async def _next_turn(
                     bot_answer = random.choice(wrong_options)
                 elif options:
                     bot_answer = options[0]
-            text = _format_bot_wrong_answer(pair, bot_answer)
+            text = _format_bot_wrong_answer(pair, bot_answer, bot_name)
 
             for pid in session.players:
                 chat_id = session.player_chats.get(pid)
@@ -529,23 +623,33 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     """Send final statistics and remove the session."""
 
     _remove_session(context, session)
+    _ensure_turn_setup(session)
     team_label = _format_team_label(session)
     team_label_html = escape(team_label)
     players_total = sum(session.player_stats.values())
     team_line = (
         f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>"
     )
-    bot_line = f"🤖 <b>Бот-противник</b> — <b>{session.bot_stats}</b>"
-    if players_total > session.bot_stats:
+    bot_names = [member.name for member in session.bot_team]
+    bot_label = " и ".join(bot_names) if bot_names else "Команда ботов"
+    bot_label_html = escape(bot_label)
+    legacy_bot_line = f"🤖 <b>Бот-противник</b> — <b>{session.bot_team_score}</b>"
+    bot_line = (
+        f"🤖 <b>Команда ботов</b> ({bot_label_html}) — <b>{session.bot_team_score}</b>"
+    )
+    if players_total > session.bot_team_score:
         result_line = f"🎉 <b>Команда ({team_label_html}) побеждает!</b>"
-    elif players_total < session.bot_stats:
-        result_line = "🤖 <b>Бот-противник одерживает победу!</b>"
+    elif players_total < session.bot_team_score:
+        result_line = (
+            f"🤖 <b>Команда ботов ({bot_label_html}) одерживает победу!</b>"
+        )
     else:
         result_line = "🤝 <b>Ничья — отличная игра!</b>"
 
     text = (
         "🏁 <b>Игра завершена!</b>\n"
         f"{team_line}\n"
+        f"{legacy_bot_line}\n"
         f"{bot_line}\n\n"
         f"{result_line}"
     )
@@ -1205,7 +1309,12 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if player_id != update.effective_user.id:
         await q.answer("Не ваша кнопка", show_alert=True)
         return
-    if player_id != session.players[session.turn_index]:
+    if not session.players:
+        await q.answer("Матч завершён", show_alert=True)
+        return
+
+    current_participant = session.players[session.turn_index]
+    if player_id != current_participant:
         await q.answer("Сейчас не ваш ход", show_alert=True)
         return
 
@@ -1219,7 +1328,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     name = session.player_names.get(player_id, str(player_id))
     if correct:
-        projected = sum(session.player_stats.values()) + session.bot_stats + 1
+        projected = sum(session.player_stats.values()) + session.bot_team_score + 1
         await _broadcast_correct_answer(context, session, name, projected)
     else:
         text = f"{name} отвечает неверно ({option})."

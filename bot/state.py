@@ -128,6 +128,15 @@ class SprintSession:
 
 
 @dataclass
+class BotParticipant:
+    """Single opponent bot taking part in a cooperative match."""
+
+    identifier: str
+    name: str
+    score: int = 0
+
+
+@dataclass
 class CoopSession:
     session_id: str
     players: List[int] = field(default_factory=list)
@@ -137,16 +146,31 @@ class CoopSession:
     continent_label: str | None = None
     mode: str = "mixed"
     difficulty: str = ""
-    question_message_ids: Dict[int, int] = field(default_factory=dict)
+    question_message_ids: Dict[int | str, int | None] = field(default_factory=dict)
     remaining_pairs: List[Dict[str, Any]] = field(default_factory=list)
     current_pair: Dict[str, Any] | None = None
     turn_index: int = 0
     player_stats: Dict[int, int] = field(default_factory=dict)
-    bot_stats: int = 0
+    bot_team: List[BotParticipant] = field(default_factory=list)
+    bot_team_score: int = 0
+    turn_order: List[int | str] = field(default_factory=list)
+    bot_turn_index: int = 0
     total_pairs: int = 0
     fact_message_ids: Dict[int, int] = field(default_factory=dict)
     fact_subject: str | None = None
     fact_text: str | None = None
+
+    @property
+    def bot_stats(self) -> int:
+        """Backward-compatible alias for the bot team's total score."""
+
+        return self.bot_team_score
+
+    @bot_stats.setter
+    def bot_stats(self, value: int) -> None:
+        self.bot_team_score = value
+        for member in self.bot_team:
+            member.score = 0
 
 
 @dataclass
