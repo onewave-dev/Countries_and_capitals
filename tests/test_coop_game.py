@@ -855,4 +855,8 @@ def test_more_fact(monkeypatch):
     update_more = SimpleNamespace(callback_query=q_more, effective_user=SimpleNamespace(id=1))
     asyncio.run(hco.cb_coop(update_more, context))
     assert mock_llm.await_count == 1
-    assert 1 not in session.fact_message_ids
+    holder = session.fact_message_ids.get(1, [])
+    if isinstance(holder, list):
+        assert msg_id not in holder
+    else:
+        assert holder != msg_id

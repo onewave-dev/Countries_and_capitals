@@ -77,6 +77,46 @@ def _get_sessions(context: ContextTypes.DEFAULT_TYPE) -> MutableMapping[str, Coo
     return context.chat_data.setdefault("sessions", {})
 
 
+def _get_finished_sessions_store(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> MutableMapping[str, CoopSession]:
+    """Return storage for finished sessions awaiting fact callbacks."""
+
+    application = getattr(context, "application", None)
+    if application is not None:
+        bot_data = getattr(application, "bot_data", None)
+        if not isinstance(bot_data, MutableMapping):
+            bot_data = {}
+            setattr(application, "bot_data", bot_data)
+        finished = bot_data.get("coop_finished_sessions")
+        if not isinstance(finished, MutableMapping):
+            finished = {}
+            bot_data["coop_finished_sessions"] = finished
+        return finished
+
+    bot_data = getattr(context, "bot_data", None)
+    if not isinstance(bot_data, MutableMapping):
+        bot_data = {}
+        setattr(context, "bot_data", bot_data)
+    finished = bot_data.get("coop_finished_sessions")
+    if not isinstance(finished, MutableMapping):
+        finished = {}
+        bot_data["coop_finished_sessions"] = finished
+    return finished
+
+
+def _store_finished_session(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession
+) -> None:
+    """Keep ``session`` accessible for extra fact callbacks if needed."""
+
+    finished = _get_finished_sessions_store(context)
+    if session.fact_message_ids:
+        finished[session.session_id] = session
+    else:
+        finished.pop(session.session_id, None)
+
+
 def _iter_session_maps(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> list[MutableMapping[str, CoopSession]]:
@@ -731,33 +771,29 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     """Send final statistics and remove the session."""
 
     _remove_session(context, session)
+    _store_finished_session(context, session)
     _ensure_turn_setup(session)
     team_label = _format_team_label(session)
     team_label_html = escape(team_label)
+    player_team_title_html = f"Команда {team_label_html}"
     players_total = sum(session.player_stats.values())
-    team_line = (
-        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>"
-    )
+    team_line = f"🤝 <b>{player_team_title_html}</b> — <b>{players_total}</b>"
     bot_names = [member.name for member in session.bot_team]
-    bot_label = " и ".join(bot_names) if bot_names else "Команда ботов"
+    bot_plain_names = [name.replace("🤖 ", "", 1) for name in bot_names]
+    bot_label = " и ".join(bot_plain_names) if bot_plain_names else "Команда ботов"
     bot_label_html = escape(bot_label)
-    legacy_bot_line = f"🤖 <b>Бот-противник</b> — <b>{session.bot_team_score}</b>"
-    bot_line = (
-        f"🤖 <b>Команда ботов</b> ({bot_label_html}) — <b>{session.bot_team_score}</b>"
-    )
+    bot_team_title_html = f"Команда {bot_label_html}"
+    bot_line = f"<b>{bot_team_title_html}</b> — <b>{session.bot_team_score}</b>"
     if players_total > session.bot_team_score:
-        result_line = f"🎉 <b>Команда ({team_label_html}) побеждает!</b>"
+        result_line = f"🎉 <b>{player_team_title_html} побеждает!</b>"
     elif players_total < session.bot_team_score:
-        result_line = (
-            f"🤖 <b>Команда ботов ({bot_label_html}) одерживает победу!</b>"
-        )
+        result_line = f"<b>{bot_team_title_html} одерживает победу!</b>"
     else:
         result_line = "🤝 <b>Ничья — отличная игра!</b>"
 
     text = (
         "🏁 <b>Игра завершена!</b>\n"
         f"{team_line}\n"
-        f"{legacy_bot_line}\n"
         f"{bot_line}\n\n"
         f"{result_line}"
     )
@@ -1164,7 +1200,9 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session = _find_session_global(context, session_id)
         if session:
             sessions[session_id] = session
-        return session
+            return session
+        finished = _get_finished_sessions_store(context)
+        return finished.get(session_id)
 
     if len(parts) >= 2 and parts[1] == "cont":
         session_id = parts[2]
@@ -1422,6 +1460,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 session.fact_message_ids[owner] = ids
             else:
                 session.fact_message_ids.pop(owner, None)
+        _store_finished_session(context, session)
         return
 
     if action != "ans":
