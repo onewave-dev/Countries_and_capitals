@@ -65,6 +65,7 @@ FIRST_TURN_DELAY = 4
 TURN_TRANSITION_DELAY = 2
 BOT_THINKING_DELAY = 4
 POST_SCOREBOARD_DELAY = 1
+CORRECT_ANSWER_DELAY = 1.5
 
 
 # ===== Helpers =====
@@ -345,6 +346,7 @@ async def _auto_answer_dummy(
     if should_answer_correct:
         projected = sum(session.player_stats.values()) + session.bot_team_score + 1
         await _broadcast_correct_answer(context, session, name, projected)
+        await asyncio.sleep(CORRECT_ANSWER_DELAY)
     else:
         text = f"{name} отвечает неверно ({chosen_option})."
 
@@ -606,6 +608,7 @@ async def _next_turn(
                 member.score += 1
             score_changed = True
             await _broadcast_correct_answer(context, session, bot_name)
+            await asyncio.sleep(CORRECT_ANSWER_DELAY)
             summary_text = f"Бот отвечает верно. ({bot_name})"
             for pid in session.players:
                 chat_id = session.player_chats.get(pid)
@@ -1382,6 +1385,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if correct:
         projected = sum(session.player_stats.values()) + session.bot_team_score + 1
         await _broadcast_correct_answer(context, session, name, projected)
+        await asyncio.sleep(CORRECT_ANSWER_DELAY)
     else:
         text = f"{name} отвечает неверно ({option})."
         for pid in session.players:
