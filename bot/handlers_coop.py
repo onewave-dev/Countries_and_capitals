@@ -810,11 +810,28 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not message:
             return
 
+        users_shared = getattr(message, "users_shared", None)
+        users_shared_ids = (
+            getattr(users_shared, "user_ids", None)
+            if users_shared is not None
+            else None
+        )
+        shared_users_user_id = None
+        if users_shared_ids:
+            try:
+                shared_users_user_id = next(
+                    (uid for uid in users_shared_ids if uid),
+                    None,
+                )
+            except TypeError:
+                if isinstance(users_shared_ids, int) and users_shared_ids:
+                    shared_users_user_id = users_shared_ids
+
         user_shared = getattr(message, "user_shared", None)
         shared_user_id = getattr(user_shared, "user_id", None) if user_shared else None
         contact = getattr(message, "contact", None)
         contact_user_id = getattr(contact, "user_id", None) if contact else None
-        target_user_id = shared_user_id or contact_user_id
+        target_user_id = shared_users_user_id or shared_user_id or contact_user_id
 
         if target_user_id:
             inviter_name = session.player_names.get(user_id, "Ваш друг")
@@ -837,6 +854,12 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 await message.reply_text(
                     "Приглашение отправлено. Как только второй игрок присоединится, продолжим настройку матча.",
                 )
+            return
+
+        if users_shared is not None and not shared_users_user_id:
+            await message.reply_text(
+                "У этого контакта нет Telegram-аккаунта. Передайте ссылку вручную.",
+            )
             return
 
         if (user_shared and not shared_user_id) or (contact and not contact_user_id):
