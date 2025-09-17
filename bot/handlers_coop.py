@@ -17,8 +17,6 @@ from telegram import (
     ReplyKeyboardRemove,
     Chat,
     User,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
 )
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
@@ -907,12 +905,8 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 return
             invite_link = f"https://t.me/{bot_username}?start=coop_{session_id}"
-            markup = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🙋 Присоединиться", url=invite_link)]]
-            )
             await message.reply_text(
-                f"Поделитесь этой ссылкой с другом:\n{invite_link}",
-                reply_markup=markup,
+                f"Поделитесь этой ссылкой с другом:\n{invite_link}"
             )
             return
 

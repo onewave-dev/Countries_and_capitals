@@ -527,7 +527,8 @@ def test_invite_stage_generates_link(monkeypatch):
     assert replies
     response_text, markup = replies[0]
     assert expected_link in response_text
-    assert markup.inline_keyboard[0][0].url == expected_link
+    assert "Поделитесь этой ссылкой" in response_text
+    assert markup is None
     assert context.user_data["coop_pending"]["stage"] == "invite"
 
 
