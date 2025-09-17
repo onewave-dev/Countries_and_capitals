@@ -1,10 +1,13 @@
 import asyncio
 import sys
 from collections.abc import MutableMapping
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from html import escape
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -530,6 +533,84 @@ def test_invite_stage_generates_link(monkeypatch):
     assert "Поделитесь этой ссылкой" in response_text
     assert markup is None
     assert context.user_data["coop_pending"]["stage"] == "invite"
+
+
+@pytest.mark.parametrize(
+    "message_payload, expected_target",
+    [
+        ({"user_shared": {"request_id": 1, "user_id": 555}}, 555),
+        (
+            {
+                "users_shared": {
+                    "request_id": 2,
+                    "users": [{"user_id": 888, "first_name": "Друг"}],
+                    "user_ids": [777],
+                }
+            },
+            888,
+        ),
+    ],
+)
+def test_application_dispatches_shared_contact(monkeypatch, message_payload, expected_target):
+    import importlib
+    from telegram import Update
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    app_module = importlib.reload(importlib.import_module("app"))
+    hco = importlib.import_module("bot.handlers_coop")
+
+    join_calls: list[str] = []
+
+    def fake_join_kb(session_id: str):
+        join_calls.append(session_id)
+        return SimpleNamespace(kind="join", session=session_id)
+
+    monkeypatch.setattr(hco, "coop_join_kb", fake_join_kb)
+
+    sent_messages: list[tuple[int, str, object]] = []
+
+    async def fake_send_message(self, chat_id, text, reply_markup=None, parse_mode=None, **kwargs):
+        sent_messages.append((chat_id, text, reply_markup))
+        return SimpleNamespace(message_id=len(sent_messages))
+
+    monkeypatch.setattr(app_module.application.bot.__class__, "send_message", fake_send_message)
+    app_module.application._initialized = True
+    app_module.application.bot._bot_user = SimpleNamespace(id=999)
+
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1]
+    session.player_names = {1: "Игрок"}
+    session.player_chats = {1: 11}
+
+    app_module.application._chat_data.clear()
+    app_module.application._user_data.clear()
+    app_module.application._chat_data[11]["sessions"] = {"s1": session}
+    app_module.application._user_data[1] = {"coop_pending": {"session_id": "s1", "stage": "invite"}}
+
+    message_data = {
+        "message_id": 42,
+        "date": int(datetime.now().timestamp()),
+        "chat": {"id": 11, "type": "private"},
+        "from": {"id": 1, "is_bot": False, "first_name": "Игрок"},
+    }
+    message_data.update(message_payload)
+    update_data = {"update_id": 1000, "message": message_data}
+
+    update = Update.de_json(update_data, app_module.application.bot)
+    assert app_module.coop_message_filters.check_update(update)
+    if "user_shared" in message_payload:
+        assert getattr(update.message, "user_shared", None) is None
+    if "users_shared" in message_payload:
+        assert getattr(update.message, "users_shared", None) is not None
+
+    asyncio.run(app_module.application.process_update(update))
+
+    assert join_calls == ["s1"]
+    assert any(chat_id == expected_target and "приглашает" in text for chat_id, text, _ in sent_messages)
+    assert any(
+        chat_id == 11 and "Приглашение отправлено" in text for chat_id, text, _ in sent_messages
+    )
+    assert app_module.application.user_data[1]["coop_pending"]["stage"] == "invite"
 
 
 def test_question_stays_on_wrong_answer(monkeypatch):
