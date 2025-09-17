@@ -213,6 +213,53 @@ def _remove_session(
         sessions.pop(session.session_id, None)
 
 
+def _get_rematch_store(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> MutableMapping[str, dict] | None:
+    """Return the dictionary used for storing rematch metadata."""
+
+    bot_data = getattr(context, "bot_data", None)
+    if not isinstance(bot_data, MutableMapping):
+        application = getattr(context, "application", None)
+        bot_data = getattr(application, "bot_data", None) if application else None
+    if not isinstance(bot_data, MutableMapping):
+        return None
+
+    store = bot_data.get("coop_rematch")
+    if store is None:
+        store = {}
+        bot_data["coop_rematch"] = store
+    if not isinstance(store, MutableMapping):
+        store = {}
+        bot_data["coop_rematch"] = store
+    return store
+
+
+def _store_rematch_data(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession
+) -> None:
+    """Persist information required to quickly restart ``session``."""
+
+    store = _get_rematch_store(context)
+    if store is None:
+        return
+
+    human_players = [
+        pid for pid in session.players if isinstance(pid, int) and pid != DUMMY_PLAYER_ID
+    ]
+    payload = {
+        "players": list(session.players),
+        "player_names": dict(session.player_names),
+        "player_chats": dict(session.player_chats),
+        "continent_filter": session.continent_filter,
+        "continent_label": session.continent_label,
+        "difficulty": session.difficulty,
+        "mode": session.mode,
+        "admin_test": DUMMY_PLAYER_ID in session.players and len(human_players) == 1,
+    }
+    store[session.session_id] = payload
+
+
 def _find_user_session(
     sessions: MutableMapping[str, CoopSession], user_id: int
 ) -> tuple[str, CoopSession] | tuple[None, None]:
@@ -730,6 +777,7 @@ async def _next_turn(
 async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
     """Send final statistics and remove the session."""
 
+    _store_rematch_data(context, session)
     _remove_session(context, session)
     _ensure_turn_setup(session)
     team_label = _format_team_label(session)
@@ -761,7 +809,7 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
         f"{bot_line}\n\n"
         f"{result_line}"
     )
-    keyboard = coop_finish_kb()
+    keyboard = coop_finish_kb(session.session_id)
     for pid in session.players:
         chat_id = session.player_chats.get(pid)
         if not chat_id:
@@ -1227,6 +1275,101 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     action = parts[1]
+
+    if action == "rematch":
+        if len(parts) < 3:
+            await q.answer()
+            return
+        previous_session_id = parts[2]
+        store = _get_rematch_store(context)
+        rematch_data = store.get(previous_session_id) if store else None
+        if not rematch_data:
+            await q.answer("Матч уже недоступен", show_alert=True)
+            try:
+                await q.edit_message_reply_markup(None)
+            except Exception:
+                pass
+            return
+
+        user_id = update.effective_user.id
+        players = list(rematch_data.get("players", []))
+        human_players = [
+            pid for pid in players if isinstance(pid, int) and pid != DUMMY_PLAYER_ID
+        ]
+        if user_id not in human_players:
+            await q.answer("Матч уже недоступен", show_alert=True)
+            return
+
+        new_session_id = uuid.uuid4().hex[:8]
+        new_session = CoopSession(session_id=new_session_id)
+        new_session.players = players
+        new_session.player_names = dict(rematch_data.get("player_names", {}))
+        new_session.player_chats = dict(rematch_data.get("player_chats", {}))
+        new_session.mode = rematch_data.get("mode", "mixed") or "mixed"
+
+        chat = getattr(update, "effective_chat", None)
+        if chat and isinstance(user_id, int):
+            new_session.player_chats[user_id] = chat.id
+
+        stored_continent_filter = rematch_data.get("continent_filter")
+        stored_continent_label = rematch_data.get("continent_label")
+        stored_difficulty = rematch_data.get("difficulty", "")
+        is_admin_test = bool(rematch_data.get("admin_test"))
+
+        if is_admin_test:
+            new_session.continent_filter = stored_continent_filter
+            new_session.continent_label = stored_continent_label
+            new_session.difficulty = stored_difficulty or "medium"
+        else:
+            new_session.continent_filter = None
+            new_session.continent_label = None
+            new_session.difficulty = stored_difficulty or ""
+
+        sessions[new_session_id] = new_session
+        if store is not None:
+            store.pop(previous_session_id, None)
+
+        await q.answer("Запускаю рематч!")
+        try:
+            await q.edit_message_reply_markup(None)
+        except Exception:
+            pass
+
+        if is_admin_test:
+            await _start_game(context, new_session)
+            return
+
+        previous_continent = stored_continent_label
+        if previous_continent is None and stored_continent_filter is not None:
+            previous_continent = stored_continent_filter
+        if previous_continent is None and stored_continent_filter is None:
+            previous_continent = "Весь мир"
+
+        difficulty_titles = {
+            "easy": "🟢 70%", "medium": "🟡 80%", "hard": "🔴 90%"
+        }
+        previous_difficulty = difficulty_titles.get(stored_difficulty, "")
+
+        message_lines = ["🔁 Рематч готов!", "Выберите континент для новой игры."]
+        if previous_continent:
+            message_lines.append(f"Предыдущий выбор: {previous_continent}.")
+        if previous_difficulty:
+            message_lines.append(f"Прошлая сложность: {previous_difficulty}.")
+
+        text = "\n".join(message_lines)
+        markup = coop_continent_kb(new_session_id)
+
+        for pid in human_players:
+            chat_id = new_session.player_chats.get(pid)
+            if not chat_id:
+                continue
+            try:
+                await context.bot.send_message(
+                    chat_id, text, reply_markup=markup, parse_mode="HTML"
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send rematch continent prompt: %s", e)
+        return
 
     if action == "test":
         if update.effective_user.id == ADMIN_ID:
