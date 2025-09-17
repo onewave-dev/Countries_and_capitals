@@ -10,6 +10,7 @@ import uuid
 import logging
 from io import BytesIO
 from collections.abc import Mapping, MutableMapping
+from types import SimpleNamespace
 from html import escape
 
 from telegram import (
@@ -808,6 +809,26 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
 
         users_shared = getattr(message, "users_shared", None)
+        if users_shared is None:
+            api_kwargs = getattr(message, "api_kwargs", None)
+            if isinstance(api_kwargs, Mapping):
+                raw_users_shared = api_kwargs.get("users_shared")
+                if isinstance(raw_users_shared, Mapping):
+                    raw_users = raw_users_shared.get("users")
+                    if isinstance(raw_users, (list, tuple)):
+                        users = tuple(
+                            SimpleNamespace(**user)
+                            if isinstance(user, Mapping)
+                            else user
+                            for user in raw_users
+                        )
+                    else:
+                        users = ()
+                    users_shared = SimpleNamespace(
+                        request_id=raw_users_shared.get("request_id"),
+                        users=users,
+                        user_ids=raw_users_shared.get("user_ids"),
+                    )
         users_shared_users = (
             getattr(users_shared, "users", None)
             if users_shared is not None
@@ -841,6 +862,12 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     shared_users_user_id = users_shared_ids
 
         user_shared = getattr(message, "user_shared", None)
+        if user_shared is None:
+            api_kwargs = getattr(message, "api_kwargs", None)
+            if isinstance(api_kwargs, Mapping):
+                raw_user_shared = api_kwargs.get("user_shared")
+                if isinstance(raw_user_shared, Mapping):
+                    user_shared = SimpleNamespace(**raw_user_shared)
         shared_user_id = getattr(user_shared, "user_id", None) if user_shared else None
         contact = getattr(message, "contact", None)
         contact_user_id = getattr(contact, "user_id", None) if contact else None

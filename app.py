@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -79,6 +80,22 @@ from bot.handlers_coop import (
 from bot.handlers_stats import cmd_stats
 from bot.handlers_quit import cmd_quit
 
+try:
+    USER_SHARED_FILTER = filters.StatusUpdate.USER_SHARED
+except AttributeError:
+    class _UserSharedFilter(filters.MessageFilter):
+        __slots__ = ()
+
+        def filter(self, message):  # type: ignore[override]
+            if getattr(message, "user_shared", None):
+                return True
+            api_kwargs = getattr(message, "api_kwargs", None)
+            if isinstance(api_kwargs, Mapping) and api_kwargs.get("user_shared"):
+                return True
+            return False
+
+    USER_SHARED_FILTER = _UserSharedFilter()
+
 
 async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log unexpected errors raised by handlers."""
@@ -103,9 +120,13 @@ application.add_handler(CommandHandler("coop_cancel", cmd_coop_cancel))
 application.add_handler(CommandHandler("coop_test", cmd_coop_test))
 application.add_handler(CommandHandler("stats", cmd_stats))
 application.add_handler(CommandHandler(["quit", "exit"], cmd_quit))
-application.add_handler(
-    MessageHandler((filters.TEXT & ~filters.COMMAND) | filters.CONTACT, msg_coop)
+coop_message_filters = (
+    (filters.TEXT & ~filters.COMMAND)
+    | filters.CONTACT
+    | USER_SHARED_FILTER
+    | filters.StatusUpdate.USERS_SHARED
 )
+application.add_handler(MessageHandler(coop_message_filters, msg_coop))
 application.add_error_handler(log_error)
 
 
