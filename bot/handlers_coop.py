@@ -264,6 +264,8 @@ def _find_user_session(
     sessions: MutableMapping[str, CoopSession], user_id: int
 ) -> tuple[str, CoopSession] | tuple[None, None]:
     for sid, sess in sessions.items():
+        if getattr(sess, "finished", False):
+            continue
         if user_id in sess.players:
             return sid, sess
     return None, None
@@ -664,6 +666,18 @@ def _format_bot_team_score_label(session: CoopSession) -> str:
     return f"Команда {names_part}"
 
 
+def _has_pending_fact_messages(session: CoopSession) -> bool:
+    """Return ``True`` if there are queued fact messages for extra facts."""
+
+    for value in session.fact_message_ids.values():
+        if isinstance(value, list):
+            if value:
+                return True
+        elif value:
+            return True
+    return False
+
+
 def _format_remaining_questions_line(count: int) -> str:
     """Return a formatted string describing how many questions remain."""
 
@@ -786,26 +800,37 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     """Send final statistics and remove the session."""
 
     _store_rematch_data(context, session)
-    _remove_session(context, session)
+    session.finished = True
+    if not _has_pending_fact_messages(session):
+        _remove_session(context, session)
     _ensure_turn_setup(session)
     team_label = _format_team_label(session)
     team_label_html = escape(team_label)
     players_total = sum(session.player_stats.values())
-    team_line = (
-        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>"
-    )
-    bot_names = [member.name for member in session.bot_team]
-    bot_label = " и ".join(bot_names) if bot_names else "Команда ботов"
+    team_line = f"🤝 <b>Команда {team_label_html}</b> — <b>{players_total}</b>"
+    bot_names: list[str] = []
+    for member in session.bot_team:
+        cleaned = _strip_bot_emoji(member.name)
+        if not cleaned:
+            continue
+        if cleaned.startswith("Бот "):
+            cleaned = "Бота " + cleaned[4:]
+        bot_names.append(cleaned)
+    if not bot_names:
+        bot_label = "Команда ботов"
+    elif len(bot_names) == 1:
+        bot_label = f"Команда {bot_names[0]}"
+    elif len(bot_names) == 2:
+        bot_label = f"Команда {bot_names[0]} и {bot_names[1]}"
+    else:
+        bot_label = "Команда " + ", ".join(bot_names[:-1]) + f" и {bot_names[-1]}"
     bot_label_html = escape(bot_label)
-    legacy_bot_line = f"🤖 <b>Бот-противник</b> — <b>{session.bot_team_score}</b>"
-    bot_line = (
-        f"🤖 <b>Команда ботов</b> ({bot_label_html}) — <b>{session.bot_team_score}</b>"
-    )
+    bot_line = f"<b>{bot_label_html}</b> — <b>{session.bot_team_score}</b>"
     if players_total > session.bot_team_score:
-        result_line = f"🎉 <b>Команда ({team_label_html}) побеждает!</b>"
+        result_line = f"🎉 <b>Команда {team_label_html}</b> побеждает!"
     elif players_total < session.bot_team_score:
         result_line = (
-            f"🤖 <b>Команда ботов ({bot_label_html}) одерживает победу!</b>"
+            f"🤖 <b>{bot_label_html}</b> одерживает победу!"
         )
     else:
         result_line = "🤝 <b>Ничья — отличная игра!</b>"
@@ -813,7 +838,6 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     text = (
         "🏁 <b>Игра завершена!</b>\n"
         f"{team_line}\n"
-        f"{legacy_bot_line}\n"
         f"{bot_line}\n\n"
         f"{result_line}"
     )
@@ -1529,6 +1553,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         stored_ids = session.fact_message_ids.get(pid)
         owner = pid
+
         def _iter_ids(item: int | list[int] | None) -> list[int]:
             if isinstance(item, list):
                 return item
@@ -1573,6 +1598,8 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 session.fact_message_ids[owner] = ids
             else:
                 session.fact_message_ids.pop(owner, None)
+            if not _has_pending_fact_messages(session) and getattr(session, "finished", False):
+                _remove_session(context, session)
         return
 
     if action != "ans":

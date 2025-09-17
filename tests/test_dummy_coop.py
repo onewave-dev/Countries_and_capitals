@@ -238,10 +238,11 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     assert any("отвечает верно" in _entry_text(entry) for entry in bot.sent)
     final_text = bot.sent[-1][1]
     assert final_text.startswith("🏁 <b>Игра завершена!</b>")
-    assert "🤖 <b>Команда ботов" in final_text
+    assert "<b>Команда Бота Атлас и Бота Глобус</b>" in final_text
     assert all(chat_id is not None for chat_id, *_ in bot.sent)
     assert session.player_stats.get(hco.DUMMY_PLAYER_ID, 0) == 0
-    assert not sessions
+    assert getattr(session, "finished", False)
+    assert session.fact_message_ids
 
 
 def test_scoreboard_format_for_single_player(monkeypatch):
