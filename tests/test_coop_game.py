@@ -66,6 +66,16 @@ def _setup_session(monkeypatch, continent=None):
     return hco, session, context, bot, calls
 
 
+def _split_question_text(text):
+    if not text:
+        return None, text
+    if "\n\n" in text:
+        header, rest = text.split("\n\n", 1)
+        if header.startswith("<b>") and header.endswith("</b>"):
+            return header, rest
+    return None, text
+
+
 def test_join_callback_adds_player(monkeypatch):
     import importlib
 
@@ -617,9 +627,10 @@ def test_question_stays_on_wrong_answer(monkeypatch):
     hco, session, context, bot, calls = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))
     prompt = session.current_pair["prompt"]
-    question_messages = [entry for entry in bot.sent if entry[1] == prompt]
+    question_messages = [entry for entry in bot.sent if _split_question_text(entry[1])[1] == prompt]
     assert len(question_messages) == len(session.players)
     assert {chat_id for chat_id, *_ in question_messages} == set(session.player_chats.values())
+    assert {_split_question_text(text)[0] for _, text, _ in question_messages} == {"<b>A</b>"}
 
     initial_len = len(bot.sent)
     asyncio.run(hco._next_turn(context, session, False))
@@ -627,8 +638,9 @@ def test_question_stays_on_wrong_answer(monkeypatch):
     assert prompt_after == prompt
     new_messages = bot.sent[initial_len:]
     assert len(new_messages) == len(session.players)
-    assert all(text == prompt for _, text, _ in new_messages)
+    assert all(_split_question_text(text)[1] == prompt for _, text, _ in new_messages)
     assert {chat_id for chat_id, *_ in new_messages} == set(session.player_chats.values())
+    assert {_split_question_text(text)[0] for _, text, _ in new_messages} == {"<b>B</b>"}
     assert len(session.remaining_pairs) > 0
     assert calls.count(session.players[0]) == 1
     assert calls.count(session.players[1]) == 1
@@ -643,7 +655,7 @@ def test_turn_order_cycles(monkeypatch):
     assert session.turn_index == 1
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 0
-    question_chats = [chat for chat, text, *_ in bot.sent if text == prompt]
+    question_chats = [chat for chat, text, *_ in bot.sent if _split_question_text(text)[1] == prompt]
     assert question_chats == [1, 2, 2, 1, 1, 2]
 
 
