@@ -349,19 +349,19 @@ def coop_difficulty_kb(session_id: str, player_id: int) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                "🟢 Лёгкий · 70 %",
+                "🟢 Лёгкий",
                 callback_data=f"coop:diff:{session_id}:{player_id}:easy",
             )
         ],
         [
             InlineKeyboardButton(
-                "🟡 Средний · 80 %",
+                "🟡 Средний",
                 callback_data=f"coop:diff:{session_id}:{player_id}:medium",
             )
         ],
         [
             InlineKeyboardButton(
-                "🔴 Продвинутый · 90 %",
+                "🔴 Продвинутый",
                 callback_data=f"coop:diff:{session_id}:{player_id}:hard",
             )
         ],
