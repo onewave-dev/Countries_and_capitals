@@ -60,10 +60,11 @@ BOT_TEAM_NAMES = {
 # Probability of the bot answering correctly depending on the difficulty.
 ACCURACY = {"easy": 0.7, "medium": 0.8, "hard": 0.9}
 
-# Additional delay before showing every question in cooperative games.
-EXTRA_QUESTION_DELAY = 4
-FIRST_QUESTION_DELAY = 4 + EXTRA_QUESTION_DELAY
-NEXT_QUESTION_DELAY = 2 + EXTRA_QUESTION_DELAY
+# Timing configuration for cooperative games (in seconds).
+FIRST_TURN_DELAY = 4
+TURN_TRANSITION_DELAY = 2
+BOT_THINKING_DELAY = 4
+POST_SCOREBOARD_DELAY = 1
 
 
 # ===== Helpers =====
@@ -235,9 +236,9 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     logger.debug(
         "Delaying first cooperative question for session %s by %s seconds",
         session.session_id,
-        FIRST_QUESTION_DELAY,
+        FIRST_TURN_DELAY,
     )
-    await asyncio.sleep(FIRST_QUESTION_DELAY)
+    await asyncio.sleep(FIRST_TURN_DELAY)
     await _ask_current_pair(context, session)
 
 
@@ -557,6 +558,14 @@ async def _next_turn(
             member = session.bot_team[index]
             bot_name = member.name
             session.bot_turn_index = (index + 1) % len(session.bot_team)
+
+        logger.debug(
+            "Bot %s thinking for %s seconds before answering in session %s",
+            bot_name,
+            BOT_THINKING_DELAY,
+            session.session_id,
+        )
+        await asyncio.sleep(BOT_THINKING_DELAY)
         if bot_correct:
             session.bot_team_score += 1
             if member:
@@ -600,18 +609,26 @@ async def _next_turn(
         session.turn_index = 0
 
     if score_changed:
+        logger.debug(
+            "Delaying cooperative scoreboard for session %s by %s seconds",
+            session.session_id,
+            TURN_TRANSITION_DELAY,
+        )
+        await asyncio.sleep(TURN_TRANSITION_DELAY)
         await _broadcast_score(context, session)
+        await asyncio.sleep(POST_SCOREBOARD_DELAY)
+    else:
+        logger.debug(
+            "Delaying next cooperative turn for session %s by %s seconds",
+            session.session_id,
+            TURN_TRANSITION_DELAY,
+        )
+        await asyncio.sleep(TURN_TRANSITION_DELAY)
 
     if not session.remaining_pairs:
         await _finish_game(context, session)
         return
 
-    logger.debug(
-        "Delaying next cooperative question for session %s by %s seconds",
-        session.session_id,
-        NEXT_QUESTION_DELAY,
-    )
-    await asyncio.sleep(NEXT_QUESTION_DELAY)
     if session.remaining_pairs:
         await _ask_current_pair(context, session)
         return
