@@ -162,12 +162,34 @@ def _ensure_turn_setup(session: CoopSession) -> None:
         ]
     if not session.turn_order:
         session.turn_order = _build_turn_order(session.players)
+    if session.turn_order:
+        session.turn_index %= len(session.turn_order)
     for pid in session.players:
         session.player_stats.setdefault(pid, 0)
     if session.bot_team:
         session.bot_turn_index %= len(session.bot_team)
     else:
         session.bot_turn_index = 0
+
+
+def _get_bot_member(session: CoopSession, identifier: str) -> BotParticipant | None:
+    """Return a bot participant instance by its identifier."""
+
+    for member in session.bot_team:
+        if member.identifier == identifier:
+            return member
+    return None
+
+
+def _get_current_participant(session: CoopSession) -> int | str | None:
+    """Return the participant whose turn is currently active."""
+
+    _ensure_turn_setup(session)
+    if not session.turn_order:
+        return None
+    index = session.turn_index % len(session.turn_order)
+    session.turn_index = index
+    return session.turn_order[index]
 
 
 def _find_session_global(
@@ -236,6 +258,7 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     session.bot_turn_index = 0
     _ensure_turn_setup(session)
     session.total_pairs = len(session.remaining_pairs)
+    session.question_message_ids.clear()
     session.fact_message_ids.clear()
     session.fact_subject = None
     session.fact_text = None
@@ -365,7 +388,59 @@ async def _auto_answer_dummy(
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send dummy answer summary: %s", e)
 
-    await _next_turn(context, session, should_answer_correct)
+    await _next_turn(context, session, should_answer_correct, participant=DUMMY_PLAYER_ID)
+
+
+async def _handle_bot_turn(
+    context: ContextTypes.DEFAULT_TYPE, session: CoopSession, bot_id: str
+) -> None:
+    """Simulate a bot participant answering the current question."""
+
+    if not session.current_pair:
+        await _next_turn(context, session, False, participant=bot_id)
+        return
+
+    bot_accuracy = ACCURACY.get(session.difficulty, 0.7)
+    bot_correct = random.random() < bot_accuracy
+    bot_name = _get_participant_display_name(session, bot_id)
+
+    if bot_correct:
+        await _broadcast_correct_answer(context, session, bot_name)
+        await asyncio.sleep(CORRECT_ANSWER_DELAY)
+        summary_text = f"Бот отвечает верно. ({bot_name})"
+        for pid in session.players:
+            chat_id = session.player_chats.get(pid)
+            if not chat_id:
+                continue
+            try:
+                await context.bot.send_message(
+                    chat_id, summary_text, parse_mode="HTML"
+                )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to notify about bot move: %s", e)
+    else:
+        pair = session.current_pair if isinstance(session.current_pair, dict) else None
+        bot_answer: str | None = None
+        if pair:
+            options = list(pair.get("options") or [])
+            correct_option = pair.get("correct")
+            wrong_options = [opt for opt in options if opt != correct_option]
+            if wrong_options:
+                bot_answer = random.choice(wrong_options)
+            elif options:
+                bot_answer = options[0]
+        text = _format_bot_wrong_answer(pair, bot_answer, bot_name)
+
+        for pid in session.players:
+            chat_id = session.player_chats.get(pid)
+            if not chat_id:
+                continue
+            try:
+                await context.bot.send_message(chat_id, text, parse_mode="HTML")
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to notify about bot move: %s", e)
+
+    await _next_turn(context, session, bot_correct, participant=bot_id)
 
 
 async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
@@ -382,25 +457,24 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
         await _finish_game(context, session)
         return
 
-    current_participant = session.players[session.turn_index]
+    current_participant = _get_current_participant(session)
+    if current_participant is None:
+        await _finish_game(context, session)
+        return
     prompt = session.current_pair["prompt"]
     participant_name = _get_participant_display_name(session, current_participant)
     participant_html = escape(participant_name)
     question_text = f"Вопрос игроку <b>{participant_html}</b>:\n\n{prompt}"
 
-    if current_participant == DUMMY_PLAYER_ID:
-        recipients = [pid for pid in session.players if pid != DUMMY_PLAYER_ID]
-    else:
-        recipients = [current_participant] + [
-            pid for pid in session.players if pid != current_participant
-        ]
+    session.question_message_ids.clear()
+    recipients = [pid for pid in session.players if pid != DUMMY_PLAYER_ID]
 
     for pid in recipients:
         chat_id = session.player_chats.get(pid)
         if not chat_id:
             continue
         reply_markup = None
-        if pid == current_participant:
+        if isinstance(current_participant, int) and pid == current_participant:
             reply_markup = coop_answer_kb(
                 session.session_id, current_participant, session.current_pair["options"]
             )
@@ -411,14 +485,32 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
                 reply_markup=reply_markup,
                 parse_mode="HTML",
             )
-            if pid == current_participant:
-                session.question_message_ids[current_participant] = msg.message_id
-                session.question_message_ids[str(current_participant)] = msg.message_id
+            key = _participant_key(pid)
+            session.question_message_ids[key] = msg.message_id
+            if isinstance(pid, int):
+                session.question_message_ids[pid] = msg.message_id
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send coop question: %s", e)
 
+    key = _participant_key(current_participant)
+    session.question_message_ids.setdefault(key, None)
+    if isinstance(current_participant, int):
+        session.question_message_ids.setdefault(current_participant, None)
+
     if current_participant == DUMMY_PLAYER_ID:
         await _auto_answer_dummy(context, session)
+        return
+
+    if _is_bot_participant(current_participant):
+        bot_name = _get_participant_display_name(session, current_participant)
+        logger.debug(
+            "Bot %s thinking for %s seconds before answering in session %s",
+            bot_name,
+            BOT_THINKING_DELAY,
+            session.session_id,
+        )
+        await asyncio.sleep(BOT_THINKING_DELAY)
+        await _handle_bot_turn(context, session, current_participant)
 
 
 async def _broadcast_correct_answer(
@@ -453,7 +545,6 @@ async def _broadcast_correct_answer(
             logger.warning("Failed to read flag image for %s: %s", country, exc)
             flag_bytes = None
 
-    session.fact_message_ids.clear()
     session.fact_subject = country
     session.fact_text = fact
     kb = coop_fact_more_kb(session.session_id)
@@ -475,7 +566,11 @@ async def _broadcast_correct_answer(
                     chat_id, caption_text, reply_markup=kb, parse_mode="HTML"
                 )
             if msg:
-                session.fact_message_ids[pid] = msg.message_id
+                holder = session.fact_message_ids.setdefault(pid, [])
+                if isinstance(holder, list):
+                    holder.append(msg.message_id)
+                else:
+                    session.fact_message_ids[pid] = [holder, msg.message_id]
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send correct answer summary: %s", e)
 
@@ -563,93 +658,44 @@ async def _broadcast_score(
 
 
 async def _next_turn(
-    context: ContextTypes.DEFAULT_TYPE, session: CoopSession, correct: bool
+    context: ContextTypes.DEFAULT_TYPE,
+    session: CoopSession,
+    correct: bool,
+    participant: int | str | None = None,
 ) -> None:
-    """Advance to the next turn. Handles bot moves when needed."""
-
-    if not session.players:
-        return
+    """Advance to the next turn and trigger the following participant."""
 
     _ensure_turn_setup(session)
-    current_player = session.players[session.turn_index]
+    if not session.turn_order:
+        await _finish_game(context, session)
+        return
+
+    if participant is None:
+        participant = _get_current_participant(session)
+    if participant is None:
+        await _finish_game(context, session)
+        return
 
     score_changed = False
 
     if correct:
-        session.player_stats[current_player] = session.player_stats.get(current_player, 0) + 1
-        score_changed = True
+        if isinstance(participant, int):
+            session.player_stats[participant] = session.player_stats.get(participant, 0) + 1
+        else:
+            session.bot_team_score += 1
+            member = _get_bot_member(session, participant)
+            if member:
+                member.score += 1
         if session.remaining_pairs:
             session.remaining_pairs.pop(0)
         session.current_pair = None
+        score_changed = True
+    elif isinstance(participant, int):
+        session.player_stats.setdefault(participant, session.player_stats.get(participant, 0))
 
-    session.turn_index += 1
-
-    if session.turn_index == len(session.players):
-        if not session.current_pair and session.remaining_pairs:
-            session.current_pair = session.remaining_pairs[0]
-        if not session.current_pair:
-            session.turn_index = 0
-            await _finish_game(context, session)
-            return
-
-        bot_accuracy = ACCURACY.get(session.difficulty, 0.7)
-        bot_correct = random.random() < bot_accuracy
-        member: BotParticipant | None = None
-        bot_name = "Бот"
-        if session.bot_team:
-            index = getattr(session, "bot_turn_index", 0) % len(session.bot_team)
-            member = session.bot_team[index]
-            bot_name = member.name
-            session.bot_turn_index = (index + 1) % len(session.bot_team)
-
-        logger.debug(
-            "Bot %s thinking for %s seconds before answering in session %s",
-            bot_name,
-            BOT_THINKING_DELAY,
-            session.session_id,
-        )
-        await asyncio.sleep(BOT_THINKING_DELAY)
-        if bot_correct:
-            session.bot_team_score += 1
-            if member:
-                member.score += 1
-            score_changed = True
-            await _broadcast_correct_answer(context, session, bot_name)
-            await asyncio.sleep(CORRECT_ANSWER_DELAY)
-            summary_text = f"Бот отвечает верно. ({bot_name})"
-            for pid in session.players:
-                chat_id = session.player_chats.get(pid)
-                if not chat_id:
-                    continue
-                try:
-                    await context.bot.send_message(chat_id, summary_text, parse_mode="HTML")
-                except (TelegramError, HTTPError) as e:
-                    logger.warning("Failed to notify about bot move: %s", e)
-        else:
-            pair = session.current_pair if isinstance(session.current_pair, dict) else None
-            bot_answer: str | None = None
-            if pair:
-                options = list(pair.get("options") or [])
-                correct_option = pair.get("correct")
-                wrong_options = [opt for opt in options if opt != correct_option]
-                if wrong_options:
-                    bot_answer = random.choice(wrong_options)
-                elif options:
-                    bot_answer = options[0]
-            text = _format_bot_wrong_answer(pair, bot_answer, bot_name)
-
-            for pid in session.players:
-                chat_id = session.player_chats.get(pid)
-                if not chat_id:
-                    continue
-                try:
-                    await context.bot.send_message(chat_id, text, parse_mode="HTML")
-                except (TelegramError, HTTPError) as e:
-                    logger.warning("Failed to notify about bot move: %s", e)
-        if bot_correct:
-            if session.remaining_pairs:
-                session.remaining_pairs.pop(0)
-            session.current_pair = None
+    if session.turn_order:
+        session.turn_index = (session.turn_index + 1) % len(session.turn_order)
+    else:
         session.turn_index = 0
 
     pairs_left = bool(session.remaining_pairs)
@@ -1330,10 +1376,24 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if pid not in session.players:
             await q.answer("Не ваша кнопка", show_alert=True)
             return
-        msg_id = session.fact_message_ids.get(pid)
-        if msg_id != q.message.message_id:
-            await q.answer()
-            return
+        stored_ids = session.fact_message_ids.get(pid)
+        owner = pid
+        def _iter_ids(item: int | list[int] | None) -> list[int]:
+            if isinstance(item, list):
+                return item
+            if item is None:
+                return []
+            return [item]
+
+        if q.message.message_id not in _iter_ids(stored_ids):
+            owner = None
+            for key, value in session.fact_message_ids.items():
+                if q.message.message_id in _iter_ids(value):
+                    owner = key
+                    break
+            if owner is None:
+                await q.answer()
+                return
         await q.answer()
         extra = await generate_llm_fact(
             session.fact_subject or "", session.fact_text or ""
@@ -1353,7 +1413,15 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send extra fact: %s", e)
-        session.fact_message_ids.pop(pid, None)
+        if owner is not None:
+            values = session.fact_message_ids.get(owner)
+            ids = _iter_ids(values)
+            if q.message.message_id in ids:
+                ids = [mid for mid in ids if mid != q.message.message_id]
+            if ids:
+                session.fact_message_ids[owner] = ids
+            else:
+                session.fact_message_ids.pop(owner, None)
         return
 
     if action != "ans":
@@ -1375,8 +1443,8 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await q.answer("Матч завершён", show_alert=True)
         return
 
-    current_participant = session.players[session.turn_index]
-    if player_id != current_participant:
+    current_participant = _get_current_participant(session)
+    if current_participant != player_id:
         await q.answer("Сейчас не ваш ход", show_alert=True)
         return
 

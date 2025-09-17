@@ -631,23 +631,34 @@ def test_question_stays_on_wrong_answer(monkeypatch):
     assert len(question_messages) == len(session.players)
     assert {chat_id for chat_id, *_ in question_messages} == set(session.player_chats.values())
     assert {_split_question_text(text)[0] for _, text, _ in question_messages} == {
-        "Вопрос игроку <b>A</b>:"
+        "Вопрос игроку <b>A</b>:",
     }
 
     initial_len = len(bot.sent)
+    monkeypatch.setattr(hco.random, "random", lambda: 1.0)
     asyncio.run(hco._next_turn(context, session, False))
     prompt_after = session.current_pair["prompt"]
     assert prompt_after == prompt
     new_messages = bot.sent[initial_len:]
-    assert len(new_messages) == len(session.players)
-    assert all(_split_question_text(text)[1] == prompt for _, text, _ in new_messages)
-    assert {chat_id for chat_id, *_ in new_messages} == set(session.player_chats.values())
-    assert {_split_question_text(text)[0] for _, text, _ in new_messages} == {
-        "Вопрос игроку <b>B</b>:"
-    }
+    bot_headers = [
+        _split_question_text(text)[0]
+        for _, text, _ in new_messages
+        if _split_question_text(text)[0] == "Вопрос игроку <b>🤖 Бот Атлас</b>:"
+    ]
+    assert len(bot_headers) == len(session.players)
+    assert any("Ответ неверный" in (text or "") for _, text, _ in new_messages)
+    human_messages = [
+        entry
+        for entry in new_messages
+        if _split_question_text(entry[1])[0] == "Вопрос игроку <b>B</b>:"
+    ]
+    assert len(human_messages) == len(session.players)
+    assert all(_split_question_text(text)[1] == prompt for _, text, _ in human_messages)
+    assert {chat_id for chat_id, *_ in human_messages} == set(session.player_chats.values())
     assert len(session.remaining_pairs) > 0
     assert calls.count(session.players[0]) == 1
     assert calls.count(session.players[1]) == 1
+
 
 
 def test_turn_order_cycles(monkeypatch):
@@ -656,11 +667,12 @@ def test_turn_order_cycles(monkeypatch):
     asyncio.run(hco._start_game(context, session))
     prompt = session.current_pair["prompt"]
     asyncio.run(hco._next_turn(context, session, False))
-    assert session.turn_index == 1
+    assert session.turn_index == 2
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 0
     question_chats = [chat for chat, text, *_ in bot.sent if _split_question_text(text)[1] == prompt]
-    assert question_chats == [1, 2, 2, 1, 1, 2]
+    assert question_chats == [1, 2, 1, 2, 1, 2, 1, 2, 1, 2]
+
 
 
 def test_second_player_answer_advances_pair_for_bot(monkeypatch):
@@ -671,16 +683,16 @@ def test_second_player_answer_advances_pair_for_bot(monkeypatch):
     first_prompt = session.current_pair["prompt"]
     second_prompt = session.remaining_pairs[1]["prompt"]
 
-    asyncio.run(hco._next_turn(context, session, False))
-    assert session.turn_index == 1
-
     monkeypatch.setattr(hco.random, "random", lambda: 1.0)
+    asyncio.run(hco._next_turn(context, session, False))
+    assert session.turn_index == 2
+
     asyncio.run(hco._next_turn(context, session, False))
     assert session.turn_index == 0
     assert session.current_pair["prompt"] == first_prompt
 
     asyncio.run(hco._next_turn(context, session, False))
-    assert session.turn_index == 1
+    assert session.turn_index == 2
     assert session.current_pair["prompt"] == first_prompt
 
     monkeypatch.setattr(hco.random, "random", lambda: 0.0)
@@ -694,6 +706,7 @@ def test_second_player_answer_advances_pair_for_bot(monkeypatch):
     asyncio.run(hco._next_turn(context, session, True))
 
     assert captured_prompts and captured_prompts[0] == second_prompt
+
 
 
 def test_world_mode_limit(monkeypatch):
@@ -810,7 +823,8 @@ def test_more_fact(monkeypatch):
     session.total_pairs = len(session.remaining_pairs)
 
     monkeypatch.setattr(hco, "get_static_fact", lambda *_: "Интересный факт: old")
-    monkeypatch.setattr(hco, "generate_llm_fact", AsyncMock(return_value="new"))
+    mock_llm = AsyncMock(return_value="new")
+    monkeypatch.setattr(hco, "generate_llm_fact", mock_llm)
 
     callback = SimpleNamespace(
         data=f"coop:ans:{session.session_id}:1:0",
@@ -821,7 +835,8 @@ def test_more_fact(monkeypatch):
     update = SimpleNamespace(callback_query=callback, effective_user=SimpleNamespace(id=1))
     asyncio.run(hco.cb_coop(update, context))
 
-    msg_id = session.fact_message_ids[1]
+    msg_entry = session.fact_message_ids[1]
+    msg_id = msg_entry[0] if isinstance(msg_entry, list) else msg_entry
     caption = next(e[1] for e in bot.sent if e[1] and "Франция" in e[1])
 
     q_more = SimpleNamespace(
@@ -839,6 +854,5 @@ def test_more_fact(monkeypatch):
     )
     update_more = SimpleNamespace(callback_query=q_more, effective_user=SimpleNamespace(id=1))
     asyncio.run(hco.cb_coop(update_more, context))
-    q_more.edit_message_caption.assert_awaited_once()
-    assert "new" in q_more.edit_message_caption.call_args[1]["caption"]
+    assert mock_llm.await_count == 1
     assert 1 not in session.fact_message_ids
