@@ -407,17 +407,6 @@ async def _handle_bot_turn(
     if bot_correct:
         await _broadcast_correct_answer(context, session, bot_name)
         await asyncio.sleep(CORRECT_ANSWER_DELAY)
-        summary_text = f"Бот отвечает верно. ({bot_name})"
-        for pid in session.players:
-            chat_id = session.player_chats.get(pid)
-            if not chat_id:
-                continue
-            try:
-                await context.bot.send_message(
-                    chat_id, summary_text, parse_mode="HTML"
-                )
-            except (TelegramError, HTTPError) as e:
-                logger.warning("Failed to notify about bot move: %s", e)
     else:
         pair = session.current_pair if isinstance(session.current_pair, dict) else None
         bot_answer: str | None = None
