@@ -831,7 +831,7 @@ def test_more_fact(monkeypatch):
     asyncio.run(hco.cb_coop(update, context))
 
     msg_entry = session.fact_message_ids[1]
-    msg_id = msg_entry[0] if isinstance(msg_entry, list) else msg_entry
+    msg_id = msg_entry[-1] if isinstance(msg_entry, list) else msg_entry
     caption = next(e[1] for e in bot.sent if e[1] and "Франция" in e[1])
 
     q_more = SimpleNamespace(
@@ -849,5 +849,13 @@ def test_more_fact(monkeypatch):
     )
     update_more = SimpleNamespace(callback_query=q_more, effective_user=SimpleNamespace(id=1))
     asyncio.run(hco.cb_coop(update_more, context))
-    assert mock_llm.await_count == 1
+    assert q_more.edit_message_caption.await_count == 1
+    caption_args = q_more.edit_message_caption.await_args
+    if caption_args:
+        args, kwargs = caption_args
+        caption_text = ""
+        if args:
+            caption_text = args[0]
+        caption_text = kwargs.get("caption", caption_text)
+        assert "Еще один факт: new" in caption_text
     assert 1 not in session.fact_message_ids

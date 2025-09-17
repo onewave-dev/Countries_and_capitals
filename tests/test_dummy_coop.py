@@ -13,6 +13,12 @@ def _split_question_text(text: str | None) -> tuple[str | None, str | None]:
     return None, text
 
 
+def _entry_text(entry):
+    if isinstance(entry, tuple) and len(entry) >= 2:
+        return entry[1] or ""
+    return ""
+
+
 def test_admin_button_visible_only_for_admin(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
@@ -229,7 +235,7 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
         if body == question_prompt and header
     ]
     assert f"Вопрос игроку <b>🤖 Бот Атлас</b>:" in bot_question_headers
-    assert any("Бот отвечает верно" in (entry[1] or "") for entry in bot.sent)
+    assert any("отвечает верно" in _entry_text(entry) for entry in bot.sent)
     final_text = bot.sent[-1][1]
     assert final_text.startswith("🏁 <b>Игра завершена!</b>")
     assert "🤖 <b>Команда ботов" in final_text
@@ -462,7 +468,7 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
 
     asyncio.run(hco._next_turn(context, session, True))
 
-    bot_messages = [msg for msg in bot.sent if "Бот отвечает" in msg[1]]
+    bot_messages = [msg for msg in bot.sent if "отвечает верно" in _entry_text(msg)]
     assert len(bot_messages) == len(session.players)
     assert all("верно" in text for _, text, *_ in bot_messages)
     assert session.bot_stats >= 1
