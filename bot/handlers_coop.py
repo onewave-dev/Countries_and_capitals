@@ -516,28 +516,38 @@ async def _broadcast_score(
     answered_total = players_total + session.bot_team_score
     remaining = max(session.total_pairs - answered_total, 0)
     remaining_line = _format_remaining_questions_line(remaining)
-    bot_names = [member.name for member in session.bot_team]
-    bot_label = " и ".join(bot_names) if bot_names else "Команда ботов"
-    bot_label_html = escape(bot_label)
-    legacy_text = (
-        "📊 <b>Текущий счёт</b>\n"
-        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>\n"
-        f"🤖 <b>Бот-противник</b> — <b>{session.bot_team_score}</b>\n"
-        f"{remaining_line}"
-    )
-    text = (
-        "📊 <b>Текущий счёт</b>\n"
-        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>\n"
-        f"🤖 <b>Команда ботов</b> ({bot_label_html}) — <b>{session.bot_team_score}</b>\n"
-        f"{remaining_line}"
-    )
+    bot_names_html = [escape(member.name) for member in session.bot_team]
+    if bot_names_html:
+        bot_label_html = " и ".join(bot_names_html)
+    else:
+        bot_label_html = escape("Команда ботов")
+
+    bot_breakdown_lines: list[str] = []
+    for member in session.bot_team:
+        member_name_html = escape(member.name)
+        bot_breakdown_lines.append(
+            f"• {member_name_html} — <b>{member.score}</b>"
+        )
+
+    text_lines = [
+        "📊 <b>Текущий счёт</b>",
+        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>",
+        (
+            "🤖 <b>Совокупный результат</b> "
+            f"({bot_label_html}) — <b>{session.bot_team_score}</b>"
+        ),
+    ]
+    if bot_breakdown_lines:
+        text_lines.extend(bot_breakdown_lines)
+    text_lines.append(remaining_line)
+
+    text = "\n".join(text_lines)
 
     for pid in session.players:
         chat_id = session.player_chats.get(pid)
         if not chat_id:
             continue
         try:
-            await context.bot.send_message(chat_id, legacy_text, parse_mode="HTML")
             await context.bot.send_message(chat_id, text, parse_mode="HTML")
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to broadcast coop score: %s", e)
