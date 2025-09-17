@@ -411,11 +411,11 @@ def coop_fact_more_kb(session_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def coop_finish_kb() -> InlineKeyboardMarkup:
+def coop_finish_kb(session_id: str) -> InlineKeyboardMarkup:
     """Keyboard shown after a cooperative match finishes."""
 
     rows = [
-        [InlineKeyboardButton("Сыграть еще раз", callback_data="menu:coop")],
+        [InlineKeyboardButton("Сыграть еще раз", callback_data=f"coop:rematch:{session_id}")],
         [InlineKeyboardButton("В меню", callback_data="menu:main")],
     ]
     return InlineKeyboardMarkup(rows)
