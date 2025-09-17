@@ -3,6 +3,16 @@ from types import SimpleNamespace
 from html import escape
 
 
+def _split_question_text(text: str | None) -> tuple[str | None, str | None]:
+    if not text:
+        return None, text
+    if "\n\n" in text:
+        header, rest = text.split("\n\n", 1)
+        if header.startswith("<b>") and header.endswith("</b>"):
+            return header, rest
+    return None, text
+
+
 def test_admin_button_visible_only_for_admin(monkeypatch):
     monkeypatch.setenv("ADMIN_ID", "1")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
@@ -201,12 +211,16 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     # Question sent after the intro message to the human player
     assert bot.sent[1][0] == 77
     question_prompt = session.current_pair["prompt"]
-    assert bot.sent[1][1] == question_prompt
+    question_header, question_body = _split_question_text(bot.sent[1][1])
+    assert question_body == question_prompt
+    assert question_header == "<b>Админ</b>"
     assert bot.sent[1][2] is not None
 
     # Simulate a wrong human answer -> dummy should answer automatically, then the opponent bot moves
     asyncio.run(hco._next_turn(context, session, False))
-    question_repeats = [text for _, text, _ in bot.sent if text == question_prompt]
+    question_repeats = [
+        text for _, text, _ in bot.sent if _split_question_text(text)[1] == question_prompt
+    ]
     assert len(question_repeats) >= 2
     assert len(bot.sent) >= 4
     dummy_photos = [entry for entry in bot.photos if entry[1] and "Бот-помощник отвечает верно" in entry[1]]
@@ -383,18 +397,45 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     assert session.bot_stats == 1
     assert not bot.photos
 
-    question_messages = [
-        (chat_id, text)
-        for chat_id, text, *_ in bot.sent
-        if text in {"Q1", "Q2", "Q3"}
-    ]
+    def messages_for(prompt: str) -> list[tuple[int, str, object, str | None]]:
+        results = []
+        for chat_id, text, reply_markup, parse_mode in bot.sent:
+            _, body = _split_question_text(text)
+            if body == prompt:
+                results.append((chat_id, text, reply_markup, parse_mode))
+        return results
 
     def chats_for(prompt: str) -> list[int]:
-        return [chat for chat, text in question_messages if text == prompt]
+        return [chat_id for chat_id, *_ in messages_for(prompt)]
+
+    q1_messages = messages_for("Q1")
+    q2_messages = messages_for("Q2")
 
     assert chats_for("Q1") == [1, 2]
     assert chats_for("Q2") == [2, 1]
     assert chats_for("Q3") == []
+
+    def headers_of(messages):
+        return {_split_question_text(text)[0] for _, text, _, _ in messages}
+
+    assert headers_of(q1_messages) == {"<b>Игрок 1</b>"}
+    assert headers_of(q2_messages) == {"<b>Игрок 2</b>"}
+
+    assert len({text for _, text, _, _ in q1_messages}) == 1
+    assert len({text for _, text, _, _ in q2_messages}) == 1
+
+    def parse_modes_of(messages):
+        return {mode for *_, mode in messages}
+
+    assert parse_modes_of(q1_messages) == {"HTML"}
+    assert parse_modes_of(q2_messages) == {"HTML"}
+
+    active_markups_q1 = [kb for *_, kb, _ in q1_messages if kb is not None]
+    active_markups_q2 = [kb for *_, kb, _ in q2_messages if kb is not None]
+    if active_markups_q1:
+        assert len(active_markups_q1) == 1
+    if active_markups_q2:
+        assert len(active_markups_q2) == 1
 
     score_messages = [
         text

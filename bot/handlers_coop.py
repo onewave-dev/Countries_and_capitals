@@ -116,6 +116,28 @@ def _is_bot_participant(participant: object) -> bool:
     return isinstance(participant, str) and participant in BOT_TEAM_NAMES
 
 
+def _get_participant_display_name(
+    session: CoopSession, participant: int | str
+) -> str:
+    """Return a human-readable participant name for prompts."""
+
+    if _is_bot_participant(participant):
+        return BOT_TEAM_NAMES.get(participant, "Бот")
+
+    name = session.player_names.get(participant)
+    if name:
+        return name
+
+    if isinstance(participant, int):
+        try:
+            index = session.players.index(participant)
+        except ValueError:
+            return str(participant)
+        return f"Игрок {index + 1}"
+
+    return str(participant)
+
+
 def _build_turn_order(players: list[int]) -> list[int | str]:
     """Return the default turn order for the given players."""
 
@@ -353,7 +375,9 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
         return
 
     current_participant = session.players[session.turn_index]
-    question_text = session.current_pair["prompt"]
+    prompt = session.current_pair["prompt"]
+    participant_name = _get_participant_display_name(session, current_participant)
+    question_text = f"<b>{escape(participant_name)}</b>\n\n{prompt}"
 
     if current_participant == DUMMY_PLAYER_ID:
         recipients = [pid for pid in session.players if pid != DUMMY_PLAYER_ID]
