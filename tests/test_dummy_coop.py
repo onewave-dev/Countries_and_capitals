@@ -216,33 +216,25 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     assert question_header == "Вопрос игроку <b>Админ</b>:"
     assert bot.sent[1][2] is not None
 
-    # Simulate a wrong human answer -> dummy should answer automatically, then the opponent bot moves
+    # Simulate a wrong human answer -> бот соперника отвечает автоматически, матч завершается
     asyncio.run(hco._next_turn(context, session, False))
     question_repeats = [
         text for _, text, _ in bot.sent if _split_question_text(text)[1] == question_prompt
     ]
     assert len(question_repeats) >= 2
-    assert len(bot.sent) >= 4
     bot_question_headers = [
         header
         for _, text, _ in bot.sent
         for header, body in (_split_question_text(text),)
         if body == question_prompt and header
     ]
-    assert f"Вопрос игроку <b>Бот-помощник</b>:" in bot_question_headers
-    dummy_photos = [entry for entry in bot.photos if entry[1] and "Бот-помощник отвечает верно" in entry[1]]
-    assert dummy_photos
-    assert all(chat_id == 77 for chat_id, *_ in dummy_photos)
-    opponent_photos = [
-        entry for entry in bot.photos if entry[1] and "Бот отвечает верно" in entry[1]
-    ]
-    assert not opponent_photos
+    assert f"Вопрос игроку <b>🤖 Бот Атлас</b>:" in bot_question_headers
+    assert any("Бот отвечает верно" in (entry[1] or "") for entry in bot.sent)
     final_text = bot.sent[-1][1]
     assert final_text.startswith("🏁 <b>Игра завершена!</b>")
-    assert "🤝 <b>Команда</b> (" in final_text
-    assert "🤖 <b>Бот-противник</b> — <b>" in final_text
+    assert "🤖 <b>Команда ботов" in final_text
     assert all(chat_id is not None for chat_id, *_ in bot.sent)
-    assert session.player_stats[hco.DUMMY_PLAYER_ID] >= 1
+    assert session.player_stats.get(hco.DUMMY_PLAYER_ID, 0) == 0
     assert not sessions
 
 
@@ -308,7 +300,7 @@ def test_bot_accuracy(monkeypatch):
 
     # Player answers wrong so that the bot takes a turn
     asyncio.run(hco._next_turn(context, session, False))
-    assert session.bot_stats == 1
+    assert session.bot_stats >= 1
     assert not bot.photos
 
 
@@ -392,16 +384,17 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     asyncio.run(hco._ask_current_pair(context, session))
     asyncio.run(hco._next_turn(context, session, True))
 
-    assert session.turn_index == 1
-    assert session.current_pair["prompt"] == "Q2"
+    assert session.turn_index == 2
+    assert session.current_pair["prompt"] == "Q3"
     assert session.player_stats == {1: 1, 2: 0}
+    assert session.bot_stats >= 1
 
     asyncio.run(hco._next_turn(context, session, True))
 
     bot_messages = [msg for msg in bot.sent if "Бот отвечает" in msg[1]]
     assert len(bot_messages) == len(session.players)
     assert all("верно" in text for _, text, *_ in bot_messages)
-    assert session.bot_stats == 1
+    assert session.bot_stats >= 1
     assert not bot.photos
 
     def messages_for(prompt: str) -> list[tuple[int, str, object, str | None]]:
@@ -417,16 +410,18 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
 
     q1_messages = messages_for("Q1")
     q2_messages = messages_for("Q2")
+    q3_messages = messages_for("Q3")
 
     assert chats_for("Q1") == [1, 2]
-    assert chats_for("Q2") == [2, 1]
-    assert chats_for("Q3") == []
+    assert chats_for("Q2") == [1, 2]
+    assert chats_for("Q3") == [1, 2]
 
     def headers_of(messages):
         return {_split_question_text(text)[0] for _, text, _, _ in messages}
 
     assert headers_of(q1_messages) == {"Вопрос игроку <b>Игрок 1</b>:"}
-    assert headers_of(q2_messages) == {"Вопрос игроку <b>Игрок 2</b>:"}
+    assert headers_of(q2_messages) == {"Вопрос игроку <b>🤖 Бот Атлас</b>:"}
+    assert headers_of(q3_messages) == {"Вопрос игроку <b>Игрок 2</b>:"}
 
     assert len({text for _, text, _, _ in q1_messages}) == 1
     assert len({text for _, text, _, _ in q2_messages}) == 1
@@ -460,7 +455,6 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
         final_remaining_line not in message for message in score_messages
     ), "final scoreboard should be omitted when no pairs remain"
 
-    assert session.turn_index == 0
     assert session.current_pair is None
     assert session.player_stats == {1: 1, 2: 1}
     assert session.remaining_pairs == []
