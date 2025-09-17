@@ -53,8 +53,8 @@ BOT_ATLAS_ID = "bot:atlas"
 BOT_GLOBUS_ID = "bot:globus"
 BOT_TEAM_ORDER = [BOT_ATLAS_ID, BOT_GLOBUS_ID]
 BOT_TEAM_NAMES = {
-    BOT_ATLAS_ID: "Бот Атлас",
-    BOT_GLOBUS_ID: "Бот Глобус",
+    BOT_ATLAS_ID: "🤖 Бот Атлас",
+    BOT_GLOBUS_ID: "🤖 Бот Глобус",
 }
 
 # Probability of the bot answering correctly depending on the difficulty.
