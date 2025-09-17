@@ -6,10 +6,10 @@ from html import escape
 def _split_question_text(text: str | None) -> tuple[str | None, str | None]:
     if not text:
         return None, text
-    if "\n\n" in text:
-        header, rest = text.split("\n\n", 1)
-        if header.startswith("<b>") and header.endswith("</b>"):
-            return header, rest
+    parts = text.split("\n\n", 1)
+    if len(parts) == 2:
+        header, rest = parts
+        return header, rest
     return None, text
 
 
@@ -213,7 +213,7 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     question_prompt = session.current_pair["prompt"]
     question_header, question_body = _split_question_text(bot.sent[1][1])
     assert question_body == question_prompt
-    assert question_header == "<b>Админ</b>"
+    assert question_header == "Вопрос игроку <b>Админ</b>:"
     assert bot.sent[1][2] is not None
 
     # Simulate a wrong human answer -> dummy should answer automatically, then the opponent bot moves
@@ -223,6 +223,13 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     ]
     assert len(question_repeats) >= 2
     assert len(bot.sent) >= 4
+    bot_question_headers = [
+        header
+        for _, text, _ in bot.sent
+        for header, body in (_split_question_text(text),)
+        if body == question_prompt and header
+    ]
+    assert f"Вопрос игроку <b>Бот-помощник</b>:" in bot_question_headers
     dummy_photos = [entry for entry in bot.photos if entry[1] and "Бот-помощник отвечает верно" in entry[1]]
     assert dummy_photos
     assert all(chat_id == 77 for chat_id, *_ in dummy_photos)
@@ -418,8 +425,8 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     def headers_of(messages):
         return {_split_question_text(text)[0] for _, text, _, _ in messages}
 
-    assert headers_of(q1_messages) == {"<b>Игрок 1</b>"}
-    assert headers_of(q2_messages) == {"<b>Игрок 2</b>"}
+    assert headers_of(q1_messages) == {"Вопрос игроку <b>Игрок 1</b>:"}
+    assert headers_of(q2_messages) == {"Вопрос игроку <b>Игрок 2</b>:"}
 
     assert len({text for _, text, _, _ in q1_messages}) == 1
     assert len({text for _, text, _, _ in q2_messages}) == 1

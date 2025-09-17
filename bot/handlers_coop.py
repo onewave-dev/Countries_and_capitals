@@ -385,7 +385,8 @@ async def _ask_current_pair(context: ContextTypes.DEFAULT_TYPE, session: CoopSes
     current_participant = session.players[session.turn_index]
     prompt = session.current_pair["prompt"]
     participant_name = _get_participant_display_name(session, current_participant)
-    question_text = f"<b>{escape(participant_name)}</b>\n\n{prompt}"
+    participant_html = escape(participant_name)
+    question_text = f"Вопрос игроку <b>{participant_html}</b>:\n\n{prompt}"
 
     if current_participant == DUMMY_PLAYER_ID:
         recipients = [pid for pid in session.players if pid != DUMMY_PLAYER_ID]
