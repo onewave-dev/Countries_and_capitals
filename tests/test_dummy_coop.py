@@ -401,16 +401,16 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
         for _, text, *_ in bot.sent
         if text and text.startswith("📊 <b>Текущий счёт</b>")
     ]
-    players_total = sum(session.player_stats.values())
-    expected_remaining = max(session.total_pairs - (players_total + session.bot_stats), 0)
-    team_label = hco._format_team_label(session)
-    expected_score = (
-        "📊 <b>Текущий счёт</b>\n"
-        f"🤝 <b>Команда</b> ({escape(team_label)}) — <b>{players_total}</b>\n"
-        f"🤖 <b>Бот-противник</b> — <b>{session.bot_stats}</b>\n"
-        f"{hco._format_remaining_questions_line(expected_remaining)}"
-    )
-    assert expected_score in score_messages
+    assert score_messages, "scoreboard should be broadcast after the first correct answer"
+
+    assert any(
+        "Осталось <b>" in message for message in score_messages
+    ), "intermediate scoreboard should reflect pending questions"
+
+    final_remaining_line = hco._format_remaining_questions_line(0)
+    assert all(
+        final_remaining_line not in message for message in score_messages
+    ), "final scoreboard should be omitted when no pairs remain"
 
     assert session.turn_index == 0
     assert session.current_pair is None

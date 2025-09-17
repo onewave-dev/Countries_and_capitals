@@ -608,6 +608,8 @@ async def _next_turn(
             session.current_pair = None
         session.turn_index = 0
 
+    pairs_left = bool(session.remaining_pairs)
+
     if score_changed:
         logger.debug(
             "Delaying cooperative scoreboard for session %s by %s seconds",
@@ -615,6 +617,9 @@ async def _next_turn(
             TURN_TRANSITION_DELAY,
         )
         await asyncio.sleep(TURN_TRANSITION_DELAY)
+        if not pairs_left:
+            await _finish_game(context, session)
+            return
         await _broadcast_score(context, session)
         await asyncio.sleep(POST_SCOREBOARD_DELAY)
     else:
@@ -629,11 +634,7 @@ async def _next_turn(
         await _finish_game(context, session)
         return
 
-    if session.remaining_pairs:
-        await _ask_current_pair(context, session)
-        return
-
-    await _finish_game(context, session)
+    await _ask_current_pair(context, session)
 
 
 async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) -> None:
