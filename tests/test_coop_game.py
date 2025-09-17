@@ -732,19 +732,14 @@ def test_score_broadcast_includes_team_total(monkeypatch):
     assert score_messages
     scoreboard_text = score_messages[-1]
     assert (
-        f"🤝 <b>Команда</b> ({escape(team_label)}) — <b>{players_total}</b>"
+        f"🤝 <b>Команда {escape(team_label)}</b> — <b>{players_total}</b>"
         in scoreboard_text
     )
     hco._ensure_turn_setup(session)
-    bot_names_html = " и ".join(escape(member.name) for member in session.bot_team)
+    bot_label = hco._format_bot_team_score_label(session)
     assert (
-        "🤖 <b>Совокупный результат</b> "
-        f"({bot_names_html}) — <b>{session.bot_stats}</b>"
-        in scoreboard_text
+        f"🤖 <b>{escape(bot_label)}</b> — <b>{session.bot_stats}</b>" in scoreboard_text
     )
-    for member in session.bot_team:
-        member_line = f"• {escape(member.name)} — <b>{member.score}</b>"
-        assert member_line in scoreboard_text
     remaining_line = hco._format_remaining_questions_line(expected_remaining)
     assert remaining_line in scoreboard_text
     assert not bot.photos

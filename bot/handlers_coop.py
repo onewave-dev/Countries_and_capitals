@@ -594,6 +594,40 @@ def _format_team_label(session: CoopSession) -> str:
     return ", ".join(player_names[:-1]) + f" и {player_names[-1]}"
 
 
+def _strip_bot_emoji(name: str | None) -> str:
+    """Return ``name`` without a leading robot emoji used in bot labels."""
+
+    if not name:
+        return ""
+
+    stripped = name.strip()
+    if stripped.startswith("🤖"):
+        stripped = stripped[1:].strip()
+    return stripped
+
+
+def _format_bot_team_score_label(session: CoopSession) -> str:
+    """Return a label for the bot team without emoji for scoreboard output."""
+
+    cleaned_names: list[str] = []
+    for member in session.bot_team:
+        cleaned = _strip_bot_emoji(member.name)
+        if cleaned:
+            cleaned_names.append(cleaned)
+
+    if not cleaned_names:
+        return "Команда ботов"
+
+    if len(cleaned_names) == 1:
+        names_part = cleaned_names[0]
+    elif len(cleaned_names) == 2:
+        names_part = f"{cleaned_names[0]} и {cleaned_names[1]}"
+    else:
+        names_part = ", ".join(cleaned_names[:-1]) + f" и {cleaned_names[-1]}"
+
+    return f"Команда {names_part}"
+
+
 def _format_remaining_questions_line(count: int) -> str:
     """Return a formatted string describing how many questions remain."""
 
@@ -620,29 +654,14 @@ async def _broadcast_score(
     answered_total = players_total + session.bot_team_score
     remaining = max(session.total_pairs - answered_total, 0)
     remaining_line = _format_remaining_questions_line(remaining)
-    bot_names_html = [escape(member.name) for member in session.bot_team]
-    if bot_names_html:
-        bot_label_html = " и ".join(bot_names_html)
-    else:
-        bot_label_html = escape("Команда ботов")
-
-    bot_breakdown_lines: list[str] = []
-    for member in session.bot_team:
-        member_name_html = escape(member.name)
-        bot_breakdown_lines.append(
-            f"• {member_name_html} — <b>{member.score}</b>"
-        )
+    bot_label = _format_bot_team_score_label(session)
+    bot_label_html = escape(bot_label)
 
     text_lines = [
         "📊 <b>Текущий счёт</b>",
-        f"🤝 <b>Команда</b> ({team_label_html}) — <b>{players_total}</b>",
-        (
-            "🤖 <b>Совокупный результат</b> "
-            f"({bot_label_html}) — <b>{session.bot_team_score}</b>"
-        ),
+        f"🤝 <b>Команда {team_label_html}</b> — <b>{players_total}</b>",
+        f"🤖 <b>{bot_label_html}</b> — <b>{session.bot_team_score}</b>",
     ]
-    if bot_breakdown_lines:
-        text_lines.extend(bot_breakdown_lines)
     text_lines.append(remaining_line)
 
     text = "\n".join(text_lines)
