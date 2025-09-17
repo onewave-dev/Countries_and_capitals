@@ -9,7 +9,7 @@ import random
 import uuid
 import logging
 from io import BytesIO
-from typing import Dict, Tuple
+from collections.abc import Mapping, MutableMapping
 from html import escape
 
 from telegram import (
@@ -61,7 +61,7 @@ NEXT_QUESTION_DELAY = 2 + EXTRA_QUESTION_DELAY
 # ===== Helpers =====
 
 
-def _get_sessions(context: ContextTypes.DEFAULT_TYPE) -> Dict[str, CoopSession]:
+def _get_sessions(context: ContextTypes.DEFAULT_TYPE) -> MutableMapping[str, CoopSession]:
     """Return cooperative sessions stored in the current chat."""
 
     return context.chat_data.setdefault("sessions", {})
@@ -69,29 +69,28 @@ def _get_sessions(context: ContextTypes.DEFAULT_TYPE) -> Dict[str, CoopSession]:
 
 def _iter_session_maps(
     context: ContextTypes.DEFAULT_TYPE,
-) -> list[Dict[str, CoopSession]]:
+) -> list[MutableMapping[str, CoopSession]]:
     """Return unique session mappings from all known chats."""
 
     seen: set[int] = set()
-    mappings: list[Dict[str, CoopSession]] = []
+    mappings: list[MutableMapping[str, CoopSession]] = []
+
+    def _add_sessions(source: Mapping[str, object] | None) -> None:
+        if not isinstance(source, Mapping):
+            return
+        sessions = source.get("sessions")
+        if isinstance(sessions, MutableMapping) and id(sessions) not in seen:
+            mappings.append(sessions)
+            seen.add(id(sessions))
 
     chat_data = getattr(context, "chat_data", None)
-    if isinstance(chat_data, dict):
-        current = chat_data.get("sessions")
-        if isinstance(current, dict):
-            mappings.append(current)
-            seen.add(id(current))
+    _add_sessions(chat_data)
 
     application = getattr(context, "application", None)
     app_chat_data = getattr(application, "chat_data", None)
-    if isinstance(app_chat_data, dict):
+    if isinstance(app_chat_data, Mapping):
         for data in app_chat_data.values():
-            if not isinstance(data, dict):
-                continue
-            sessions = data.get("sessions")
-            if isinstance(sessions, dict) and id(sessions) not in seen:
-                mappings.append(sessions)
-                seen.add(id(sessions))
+            _add_sessions(data)
 
     return mappings
 
@@ -118,8 +117,8 @@ def _remove_session(
 
 
 def _find_user_session(
-    sessions: Dict[str, CoopSession], user_id: int
-) -> Tuple[str, CoopSession] | tuple[None, None]:
+    sessions: MutableMapping[str, CoopSession], user_id: int
+) -> tuple[str, CoopSession] | tuple[None, None]:
     for sid, sess in sessions.items():
         if user_id in sess.players:
             return sid, sess
@@ -128,7 +127,7 @@ def _find_user_session(
 
 def _find_user_session_global(
     context: ContextTypes.DEFAULT_TYPE, user_id: int
-) -> Tuple[str, CoopSession] | tuple[None, None]:
+) -> tuple[str, CoopSession] | tuple[None, None]:
     """Locate a session that already involves ``user_id``."""
 
     for sessions in _iter_session_maps(context):
