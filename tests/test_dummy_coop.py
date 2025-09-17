@@ -238,6 +238,77 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     assert not sessions
 
 
+def test_scoreboard_format_for_single_player(monkeypatch):
+    import importlib
+
+    async def no_sleep(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    monkeypatch.setenv("ADMIN_ID", "5")
+    hco = importlib.reload(__import__("bot.handlers_coop", fromlist=["*"]))
+    hco.ADMIN_ID = 5
+
+    monkeypatch.setattr(hco.DATA, "countries", lambda continent: ["Франция"])
+
+    def fake_make_card_question(data, item, mode, continent):
+        return {
+            "prompt": "Q?",
+            "options": ["A", "B", "C", "D"],
+            "correct": "A",
+            "country": "Франция",
+            "capital": "A",
+            "type": "country_to_capital",
+        }
+
+    monkeypatch.setattr(hco, "make_card_question", fake_make_card_question)
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup, parse_mode))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    chat_data = {}
+    context = SimpleNamespace(
+        bot=bot,
+        user_data={"continent": "Европа"},
+        chat_data=chat_data,
+        application=SimpleNamespace(chat_data={77: chat_data}),
+    )
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=5, full_name="Тестер"),
+        effective_chat=SimpleNamespace(id=77, type="private"),
+        message=SimpleNamespace(text="/coop_test"),
+    )
+
+    asyncio.run(hco.cmd_coop_test(update, context))
+    session = next(iter(context.chat_data["sessions"].values()))
+
+    asyncio.run(hco._broadcast_score(context, session))
+
+    score_messages = [
+        text
+        for _, text, *_ in bot.sent
+        if text and text.startswith("📊 <b>Текущий счёт</b>")
+    ]
+    assert score_messages, "scoreboard should be sent to the human player"
+    scoreboard_text = score_messages[-1]
+
+    assert (
+        "🤝 <b>Команда Тестер и Бот-помощник</b>" in scoreboard_text
+    ), "player heading should not contain parentheses"
+    assert (
+        "🤖 <b>Команда Бот Атлас и Бот Глобус</b>" in scoreboard_text
+    ), "bot heading should list both bot names without emoji"
+    assert "•" not in scoreboard_text, "per-bot breakdown should be removed"
+
+
 def test_bot_accuracy(monkeypatch):
     async def no_sleep(*args, **kwargs):
         pass
