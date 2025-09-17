@@ -1,7 +1,14 @@
 import asyncio
+import sys
+from collections.abc import MutableMapping
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from html import escape
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def _setup_session(monkeypatch, continent=None):
@@ -109,6 +116,90 @@ def test_join_callback_adds_player(monkeypatch):
     assert any(
         chat_id == 100 and "подключился" in (text or "") for chat_id, text, _ in bot.sent
     )
+
+
+def test_start_deeplink_handles_mapping_chat_data(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x")
+    import app  # ensure application is initialised before importing handlers
+
+    hco = importlib.reload(importlib.import_module("bot.handlers_coop"))
+    menu = importlib.reload(importlib.import_module("bot.handlers_menu"))
+
+    class DummyMapping(MutableMapping):
+        def __init__(self, initial=None):
+            self._data = dict(initial or {})
+
+        def __getitem__(self, key):
+            return self._data[key]
+
+        def __setitem__(self, key, value):
+            self._data[key] = value
+
+        def __delitem__(self, key):
+            del self._data[key]
+
+        def __iter__(self):
+            return iter(self._data)
+
+        def __len__(self):
+            return len(self._data)
+
+        def values(self):
+            return self._data.values()
+
+    class DummyBot:
+        def __init__(self):
+            self.sent = []
+
+        async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
+            self.sent.append((chat_id, text, reply_markup))
+            return SimpleNamespace(message_id=len(self.sent))
+
+    bot = DummyBot()
+    session = hco.CoopSession(session_id="s1")
+    session.players = [1]
+    session.player_chats = {1: 100}
+    host_sessions = DummyMapping({"s1": session})
+    host_chat_data = DummyMapping({"sessions": host_sessions})
+    join_chat_data = DummyMapping()
+    application_chat_data = DummyMapping({100: host_chat_data, 200: join_chat_data})
+
+    context = SimpleNamespace(
+        bot=bot,
+        args=["coop_s1"],
+        user_data={},
+        chat_data=join_chat_data,
+        application=SimpleNamespace(chat_data=application_chat_data),
+    )
+
+    chat = SimpleNamespace(id=200, type="private")
+
+    class DummyMessage:
+        def __init__(self, chat):
+            self.chat = chat
+            self.replies = []
+
+        async def reply_text(self, text, reply_markup=None):
+            self.replies.append((text, reply_markup))
+            return SimpleNamespace(message_id=len(self.replies))
+
+    message = DummyMessage(chat)
+
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=2),
+        effective_chat=chat,
+        message=message,
+    )
+
+    asyncio.run(menu.cmd_start(update, context))
+
+    assert session.players == [1, 2]
+    assert session.player_chats[2] == 200
+    assert context.user_data["coop_pending"] == {"session_id": "s1", "stage": "name"}
+    assert any("Введите ваше имя" in text for text, _ in message.replies)
+    assert join_chat_data["sessions"]["s1"] is session
 
 
 def test_continent_prompt_after_names(monkeypatch):
