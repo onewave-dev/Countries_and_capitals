@@ -706,8 +706,8 @@ async def _broadcast_score(
 
     text_lines = [
         "📊 <b>Текущий счёт</b>",
-        f"🤝 <b>Команда {team_label_html}</b> — <b>{players_total}</b>",
-        f"🤖 <b>{bot_label_html}</b> — <b>{session.bot_team_score}</b>",
+        f"🤝 Команда {team_label_html} — <b>{players_total}</b>",
+        f"🤖 {bot_label_html} — <b>{session.bot_team_score}</b>",
     ]
     text_lines.append(remaining_line)
 
@@ -804,7 +804,7 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     team_label = _format_team_label(session)
     team_label_html = escape(team_label)
     players_total = sum(session.player_stats.values())
-    team_line = f"🤝 <b>Команда {team_label_html}</b> — <b>{players_total}</b>"
+    team_line = f"🤝 Команда {team_label_html} — <b>{players_total}</b>"
     bot_names: list[str] = []
     for member in session.bot_team:
         cleaned = _strip_bot_emoji(member.name)
@@ -822,13 +822,11 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     else:
         bot_label = "Команда " + ", ".join(bot_names[:-1]) + f" и {bot_names[-1]}"
     bot_label_html = escape(bot_label)
-    bot_line = f"<b>{bot_label_html}</b> — <b>{session.bot_team_score}</b>"
+    bot_line = f"{bot_label_html} — <b>{session.bot_team_score}</b>"
     if players_total > session.bot_team_score:
-        result_line = f"🎉 <b>Команда {team_label_html}</b> побеждает!"
+        result_line = f"🎉 Команда {team_label_html} <b>побеждает!</b>"
     elif players_total < session.bot_team_score:
-        result_line = (
-            f"🤖 <b>{bot_label_html}</b> одерживает победу!"
-        )
+        result_line = f"🤖 {bot_label_html} <b>одерживает победу!</b>"
     else:
         result_line = "🤝 <b>Ничья — отличная игра!</b>"
 
