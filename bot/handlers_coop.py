@@ -311,6 +311,7 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     session.total_pairs = len(session.remaining_pairs)
     session.question_message_ids.clear()
     session.fact_message_ids.clear()
+    session.fact_message_groups.clear()
     session.fact_subject = None
     session.fact_text = None
 
@@ -587,6 +588,13 @@ async def _broadcast_correct_answer(
     session.fact_subject = country
     session.fact_text = fact
     kb = coop_fact_more_kb(session.session_id)
+    group_id = uuid.uuid4().hex
+    group_entry = {
+        "country": country,
+        "fact": fact,
+        "message_ids": [],
+        "resolved": False,
+    }
 
     for pid in session.players:
         chat_id = session.player_chats.get(pid)
@@ -605,13 +613,25 @@ async def _broadcast_correct_answer(
                     chat_id, caption_text, reply_markup=kb, parse_mode="HTML"
                 )
             if msg:
+                base_text = (
+                    getattr(msg, "caption", None)
+                    or getattr(msg, "text", None)
+                    or caption_text
+                )
                 session.fact_message_ids[msg.message_id] = {
-                    "owner": pid,
+                    "chat_id": chat_id,
                     "country": country,
                     "fact": fact,
+                    "base_text": base_text,
+                    "has_photo": bool(getattr(msg, "photo", None)),
+                    "group": group_id,
                 }
+                group_entry["message_ids"].append(msg.message_id)
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send correct answer summary: %s", e)
+
+    if group_entry["message_ids"]:
+        session.fact_message_groups[group_id] = group_entry
 
 
 def _format_team_label(session: CoopSession) -> str:
@@ -1522,31 +1542,61 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not metadata:
             await q.answer()
             return
-        owner = metadata.get("owner")
-        if owner is not None and owner != pid:
-            await q.answer("Не ваша кнопка", show_alert=True)
+
+        group_id = metadata.get("group")
+        group = session.fact_message_groups.get(group_id) if group_id else None
+        if group and group.get("resolved"):
+            await q.answer()
             return
+        if group:
+            group["resolved"] = True
 
         await q.answer()
         country = str(metadata.get("country") or session.fact_subject or "")
         original_fact = str(metadata.get("fact") or session.fact_text or "")
         extra = await generate_llm_fact(country, original_fact)
-        base = q.message.caption or q.message.text or ""
-        base = base.replace(
-            "\n\nНажми кнопку ниже, чтобы узнать еще один факт", ""
-        )
-        try:
-            if message.photo:
-                await q.edit_message_caption(
-                    caption=f"{base}\n\nЕще один факт: {extra}", reply_markup=None
-                )
-            else:
-                await q.edit_message_text(
-                    f"{base}\n\nЕще один факт: {extra}", reply_markup=None
-                )
-        except (TelegramError, HTTPError) as e:
-            logger.warning("Failed to send extra fact: %s", e)
-        session.fact_message_ids.pop(message_id, None)
+
+        target_message_ids: list[int] = []
+        if group and group.get("message_ids"):
+            target_message_ids.extend(int(mid) for mid in group["message_ids"])
+        if message_id not in target_message_ids:
+            target_message_ids.append(message_id)
+
+        for mid in target_message_ids:
+            meta = session.fact_message_ids.get(mid)
+            if not meta:
+                continue
+            base_text = str(meta.get("base_text") or "")
+            if not base_text:
+                base_text = message.caption or message.text or ""
+            base = base_text.replace(
+                "\n\nНажми кнопку ниже, чтобы узнать еще один факт",
+                "",
+            )
+            chat_id = meta.get("chat_id") or getattr(message.chat, "id", None)
+            has_photo = bool(meta.get("has_photo"))
+            try:
+                if has_photo:
+                    await context.bot.edit_message_caption(
+                        chat_id=chat_id,
+                        message_id=mid,
+                        caption=f"{base}\n\nЕще один факт: {extra}",
+                        reply_markup=None,
+                    )
+                else:
+                    await context.bot.edit_message_text(
+                        text=f"{base}\n\nЕще один факт: {extra}",
+                        chat_id=chat_id,
+                        message_id=mid,
+                        reply_markup=None,
+                    )
+            except (TelegramError, HTTPError) as e:
+                logger.warning("Failed to send extra fact: %s", e)
+            finally:
+                session.fact_message_ids.pop(mid, None)
+
+        if group_id:
+            session.fact_message_groups.pop(group_id, None)
         if not _has_pending_fact_messages(session) and getattr(session, "finished", False):
             _remove_session(context, session)
         return

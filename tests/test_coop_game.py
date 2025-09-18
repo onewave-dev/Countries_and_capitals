@@ -36,11 +36,12 @@ def _setup_session(monkeypatch, continent=None):
         def __init__(self):
             self.sent = []
             self.photos = []
+            self.edited = []
 
         async def send_message(self, chat_id, text, reply_markup=None, parse_mode=None):
             entry = (chat_id, text, reply_markup)
             self.sent.append(entry)
-            return SimpleNamespace(message_id=len(self.sent))
+            return SimpleNamespace(message_id=len(self.sent), text=text)
 
         async def send_photo(
             self, chat_id, photo, caption=None, reply_markup=None, parse_mode=None
@@ -48,7 +49,19 @@ def _setup_session(monkeypatch, continent=None):
             entry = (chat_id, caption, reply_markup)
             self.sent.append(entry)
             self.photos.append((chat_id, caption))
-            return SimpleNamespace(message_id=len(self.sent))
+            return SimpleNamespace(
+                message_id=len(self.sent), caption=caption, photo=[object()]
+            )
+
+        async def edit_message_caption(
+            self, chat_id, message_id, caption=None, reply_markup=None
+        ):
+            self.edited.append(("caption", chat_id, message_id, caption, reply_markup))
+
+        async def edit_message_text(
+            self, chat_id, message_id, text=None, reply_markup=None
+        ):
+            self.edited.append(("text", chat_id, message_id, text, reply_markup))
 
     bot = DummyBot()
     session = hco.CoopSession(session_id="s1")
@@ -830,32 +843,64 @@ def test_more_fact(monkeypatch):
     update = SimpleNamespace(callback_query=callback, effective_user=SimpleNamespace(id=1))
     asyncio.run(hco.cb_coop(update, context))
 
-    msg_id, metadata = next(iter(session.fact_message_ids.items()))
-    assert metadata["owner"] == 1
-    caption = next(e[1] for e in bot.sent if e[1] and "Франция" in e[1])
+    target_entries = {
+        msg_id: meta
+        for msg_id, meta in session.fact_message_ids.items()
+        if meta.get("country") == "Франция" and meta.get("chat_id") in {1, 2}
+    }
+    assert len(target_entries) == 2
+    group_ids = {meta.get("group") for meta in target_entries.values()}
+    assert len(group_ids) == 1
+    group_id = next(iter(group_ids))
+    player_messages = {
+        meta["chat_id"]: (msg_id, meta)
+        for msg_id, meta in target_entries.items()
+    }
+    assert set(player_messages) == {1, 2}
+    msg_id, metadata = player_messages[1]
+    other_msg_id, _ = player_messages[2]
+    caption = next(
+        text for chat_id, text, _ in bot.sent if chat_id == 1 and text and "Франция" in text
+    )
 
     q_more = SimpleNamespace(
         data=f"coop:more_fact:{session.session_id}",
         message=SimpleNamespace(
             chat=SimpleNamespace(id=1),
             message_id=msg_id,
-            caption=caption,
-            text=None,
-            photo=[object()],
+            caption=None,
+            text=caption,
+            photo=[],
         ),
         answer=AsyncMock(),
-        edit_message_caption=AsyncMock(),
-        edit_message_text=AsyncMock(),
     )
     update_more = SimpleNamespace(callback_query=q_more, effective_user=SimpleNamespace(id=1))
     asyncio.run(hco.cb_coop(update_more, context))
-    assert q_more.edit_message_caption.await_count == 1
-    caption_args = q_more.edit_message_caption.await_args
-    if caption_args:
-        args, kwargs = caption_args
-        caption_text = ""
-        if args:
-            caption_text = args[0]
-        caption_text = kwargs.get("caption", caption_text)
-        assert "Еще один факт: new" in caption_text
-    assert msg_id not in session.fact_message_ids
+
+    edited_texts = [entry for entry in bot.edited if entry[0] == "text"]
+    assert len(edited_texts) == 2
+    for _, chat_id, mid, text, _ in edited_texts:
+        assert "Еще один факт: new" in text
+        assert chat_id in {1, 2}
+        assert mid in {msg_id, other_msg_id}
+
+    assert all(meta.get("country") != "Франция" for meta in session.fact_message_ids.values())
+    assert group_id not in session.fact_message_groups
+
+    q_more_second = SimpleNamespace(
+        data=f"coop:more_fact:{session.session_id}",
+        message=SimpleNamespace(
+            chat=SimpleNamespace(id=2),
+            message_id=other_msg_id,
+            caption=None,
+            text=caption,
+            photo=[],
+        ),
+        answer=AsyncMock(),
+    )
+    update_more_second = SimpleNamespace(
+        callback_query=q_more_second, effective_user=SimpleNamespace(id=2)
+    )
+    asyncio.run(hco.cb_coop(update_more_second, context))
+    assert len([entry for entry in bot.edited if entry[0] == "text"]) == 2
+    assert q_more_second.answer.await_count == 1

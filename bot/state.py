@@ -156,6 +156,7 @@ class CoopSession:
     bot_turn_index: int = 0
     total_pairs: int = 0
     fact_message_ids: Dict[int, Dict[str, Any]] = field(default_factory=dict)
+    fact_message_groups: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     fact_subject: str | None = None
     fact_text: str | None = None
 
