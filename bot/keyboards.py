@@ -206,9 +206,13 @@ def cards_answer_kb(prefix: str = "cards") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def fact_more_kb() -> InlineKeyboardMarkup:
-    """Keyboard with a single button to request another fact."""
-    rows = [[InlineKeyboardButton("Еще один факт", callback_data="cards:more_fact")]]
+def fact_more_kb(prefix: str = "cards") -> InlineKeyboardMarkup:
+    """Keyboard with a single button to request another fact.
+
+    ``prefix`` selects the callback namespace so handlers can distinguish
+    between flash-cards and test mode callbacks.
+    """
+    rows = [[InlineKeyboardButton("Еще один факт", callback_data=f"{prefix}:more_fact")]]
     return InlineKeyboardMarkup(rows)
 
 

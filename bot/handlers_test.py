@@ -192,7 +192,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             q.message.chat_id,
                             flag_file,
                             caption=fact_msg,
-                            reply_markup=fact_more_kb(),
+                            reply_markup=fact_more_kb(prefix="test"),
                         )
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to send flag image: %s", e)
@@ -201,7 +201,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     msg = await context.bot.send_message(
                         q.message.chat_id,
                         fact_msg,
-                        reply_markup=fact_more_kb(),
+                        reply_markup=fact_more_kb(prefix="test"),
                     )
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to send card feedback: %s", e)
@@ -275,7 +275,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         q.message.chat_id,
                         flag_file,
                         caption=fact_msg,
-                        reply_markup=fact_more_kb(),
+                        reply_markup=fact_more_kb(prefix="test"),
                     )
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send flag image: %s", e)
@@ -284,7 +284,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 msg = await context.bot.send_message(
                     q.message.chat_id,
                     fact_msg,
-                    reply_markup=fact_more_kb(),
+                    reply_markup=fact_more_kb(prefix="test"),
                 )
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send card feedback: %s", e)

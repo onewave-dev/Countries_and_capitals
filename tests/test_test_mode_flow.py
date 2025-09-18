@@ -87,6 +87,22 @@ def test_full_test_flow(monkeypatch):
         assert session.unknown_set
         assert get_user_stats(context.user_data).to_repeat
 
+        fact_markup = next(
+            (
+                markup
+                for _, _, markup in reversed(bot.sent)
+                if markup
+                and any(
+                    getattr(btn, "callback_data", None) == "test:more_fact"
+                    for row in markup.inline_keyboard
+                    for btn in row
+                    if getattr(btn, "callback_data", None)
+                )
+            ),
+            None,
+        )
+        assert fact_markup is not None, "Fact keyboard with test prefix not found"
+
         # after "Показать ответ" следующий вопрос отправляется автоматически
         current = context.user_data["test_session"].current
         idx = current["options"].index(current["answer"])
