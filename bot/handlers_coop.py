@@ -56,6 +56,10 @@ BOT_TEAM_NAMES = {
     BOT_ATLAS_ID: "🤖 Бот Атлас",
     BOT_GLOBUS_ID: "🤖 Бот Глобус",
 }
+BOT_TEAM_GENITIVE_NAMES = {
+    BOT_ATLAS_ID: "Бота Атласа",
+    BOT_GLOBUS_ID: "Бота Глобуса",
+}
 
 # Probability of the bot answering correctly depending on the difficulty.
 ACCURACY = {"easy": 0.7, "medium": 0.8, "hard": 0.9}
@@ -644,12 +648,32 @@ def _strip_bot_emoji(name: str | None) -> str:
     return stripped
 
 
+def _format_bot_team_member_name(member: BotParticipant | None) -> str:
+    """Return a bot name adjusted for use inside "Команда …" phrases."""
+
+    if not member:
+        return ""
+
+    genitive = BOT_TEAM_GENITIVE_NAMES.get(member.identifier)
+    if genitive:
+        return genitive
+
+    cleaned = _strip_bot_emoji(member.name)
+    if not cleaned:
+        return ""
+
+    if cleaned.startswith("Бот "):
+        return "Бота " + cleaned[4:]
+
+    return cleaned
+
+
 def _format_bot_team_score_label(session: CoopSession) -> str:
     """Return a label for the bot team without emoji for scoreboard output."""
 
     cleaned_names: list[str] = []
     for member in session.bot_team:
-        cleaned = _strip_bot_emoji(member.name)
+        cleaned = _format_bot_team_member_name(member)
         if cleaned:
             cleaned_names.append(cleaned)
 
@@ -805,24 +829,9 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
     team_label_html = escape(team_label)
     players_total = sum(session.player_stats.values())
     team_line = f"🤝 Команда {team_label_html} — <b>{players_total}</b>"
-    bot_names: list[str] = []
-    for member in session.bot_team:
-        cleaned = _strip_bot_emoji(member.name)
-        if not cleaned:
-            continue
-        if cleaned.startswith("Бот "):
-            cleaned = "Бота " + cleaned[4:]
-        bot_names.append(cleaned)
-    if not bot_names:
-        bot_label = "Команда ботов"
-    elif len(bot_names) == 1:
-        bot_label = f"Команда {bot_names[0]}"
-    elif len(bot_names) == 2:
-        bot_label = f"Команда {bot_names[0]} и {bot_names[1]}"
-    else:
-        bot_label = "Команда " + ", ".join(bot_names[:-1]) + f" и {bot_names[-1]}"
+    bot_label = _format_bot_team_score_label(session)
     bot_label_html = escape(bot_label)
-    bot_line = f"{bot_label_html} — <b>{session.bot_team_score}</b>"
+    bot_line = f"🤖 {bot_label_html} — <b>{session.bot_team_score}</b>"
     if players_total > session.bot_team_score:
         result_line = f"🎉 Команда {team_label_html} <b>побеждает!</b>"
     elif players_total < session.bot_team_score:
