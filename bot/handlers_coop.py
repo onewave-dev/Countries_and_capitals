@@ -604,11 +604,11 @@ async def _broadcast_correct_answer(
                     chat_id, caption_text, reply_markup=kb, parse_mode="HTML"
                 )
             if msg:
-                holder = session.fact_message_ids.setdefault(pid, [])
-                if isinstance(holder, list):
-                    holder.append(msg.message_id)
-                else:
-                    session.fact_message_ids[pid] = [holder, msg.message_id]
+                session.fact_message_ids[msg.message_id] = {
+                    "owner": pid,
+                    "country": country,
+                    "fact": fact,
+                }
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send correct answer summary: %s", e)
 
@@ -670,10 +670,7 @@ def _has_pending_fact_messages(session: CoopSession) -> bool:
     """Return ``True`` if there are queued fact messages for extra facts."""
 
     for value in session.fact_message_ids.values():
-        if isinstance(value, list):
-            if value:
-                return True
-        elif value:
+        if value:
             return True
     return False
 
@@ -1551,35 +1548,30 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if pid not in session.players:
             await q.answer("Не ваша кнопка", show_alert=True)
             return
-        stored_ids = session.fact_message_ids.get(pid)
-        owner = pid
+        message = q.message
+        if not message:
+            await q.answer()
+            return
+        message_id = message.message_id
+        metadata = session.fact_message_ids.get(message_id)
+        if not metadata:
+            await q.answer()
+            return
+        owner = metadata.get("owner")
+        if owner is not None and owner != pid:
+            await q.answer("Не ваша кнопка", show_alert=True)
+            return
 
-        def _iter_ids(item: int | list[int] | None) -> list[int]:
-            if isinstance(item, list):
-                return item
-            if item is None:
-                return []
-            return [item]
-
-        if q.message.message_id not in _iter_ids(stored_ids):
-            owner = None
-            for key, value in session.fact_message_ids.items():
-                if q.message.message_id in _iter_ids(value):
-                    owner = key
-                    break
-            if owner is None:
-                await q.answer()
-                return
         await q.answer()
-        extra = await generate_llm_fact(
-            session.fact_subject or "", session.fact_text or ""
-        )
+        country = str(metadata.get("country") or session.fact_subject or "")
+        original_fact = str(metadata.get("fact") or session.fact_text or "")
+        extra = await generate_llm_fact(country, original_fact)
         base = q.message.caption or q.message.text or ""
         base = base.replace(
             "\n\nНажми кнопку ниже, чтобы узнать еще один факт", ""
         )
         try:
-            if q.message.photo:
+            if message.photo:
                 await q.edit_message_caption(
                     caption=f"{base}\n\nЕще один факт: {extra}", reply_markup=None
                 )
@@ -1589,17 +1581,9 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send extra fact: %s", e)
-        if owner is not None:
-            values = session.fact_message_ids.get(owner)
-            ids = _iter_ids(values)
-            if q.message.message_id in ids:
-                ids = [mid for mid in ids if mid != q.message.message_id]
-            if ids:
-                session.fact_message_ids[owner] = ids
-            else:
-                session.fact_message_ids.pop(owner, None)
-            if not _has_pending_fact_messages(session) and getattr(session, "finished", False):
-                _remove_session(context, session)
+        session.fact_message_ids.pop(message_id, None)
+        if not _has_pending_fact_messages(session) and getattr(session, "finished", False):
+            _remove_session(context, session)
         return
 
     if action != "ans":
