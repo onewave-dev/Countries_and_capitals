@@ -298,7 +298,7 @@ def test_preselected_continent_skips_prompt(monkeypatch):
     asyncio.run(hco.msg_coop(update, context))
 
     texts = [t for _, t, _ in bot.sent]
-    assert any("Выберите сложность" in t for t in texts)
+    assert any("Матч начнётся" in t for t in texts)
     assert all("Выберите континент" not in t for t in texts)
 
 

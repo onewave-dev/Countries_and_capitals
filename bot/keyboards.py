@@ -343,32 +343,6 @@ def coop_rounds_kb(session_id: str, player_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def coop_difficulty_kb(session_id: str, player_id: int) -> InlineKeyboardMarkup:
-    """Keyboard to select bot difficulty."""
-
-    rows = [
-        [
-            InlineKeyboardButton(
-                "🟢 Лёгкий",
-                callback_data=f"coop:diff:{session_id}:{player_id}:easy",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🟡 Средний",
-                callback_data=f"coop:diff:{session_id}:{player_id}:medium",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🔴 Продвинутый",
-                callback_data=f"coop:diff:{session_id}:{player_id}:hard",
-            )
-        ],
-    ]
-    return InlineKeyboardMarkup(rows)
-
-
 def coop_continent_kb(session_id: str) -> InlineKeyboardMarkup:
     """Keyboard to select continent for cooperative mode."""
 

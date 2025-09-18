@@ -128,22 +128,9 @@ def test_coop_flow_steps(monkeypatch):
     update_cont = SimpleNamespace(callback_query=cq_cont, effective_user=SimpleNamespace(id=2))
     asyncio.run(hco.cb_coop(update_cont, context))
     assert session.continent_filter == "Азия"
-    assert calls == []
-    # difficulty keyboard sent
-    assert any(
-        "coop:diff:s1:" in btn.callback_data
-        for row in bot.sent[-1][2].inline_keyboard
-        for btn in row
-    )
-
-    cq_diff = SimpleNamespace(
-        data="coop:diff:s1:2:easy",
-        message=SimpleNamespace(chat=SimpleNamespace(id=2)),
-    )
-    cq_diff.answer = answer
-    update_diff = SimpleNamespace(callback_query=cq_diff, effective_user=SimpleNamespace(id=2))
-    asyncio.run(hco.cb_coop(update_diff, context))
     assert calls == ["s1"]
+    # start notification delivered to players
+    assert "Матч начнётся" in bot.sent[-1][1]
 
 
 def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
@@ -413,7 +400,6 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
     session.player_names = {1: "Игрок 1", 2: "Игрок 2"}
     session.player_stats = {1: 0, 2: 0}
     session.bot_stats = 0
-    session.difficulty = "medium"
     session.remaining_pairs = [
         {
             "prompt": "Q1",
