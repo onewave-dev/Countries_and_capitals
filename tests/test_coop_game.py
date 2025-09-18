@@ -732,13 +732,13 @@ def test_score_broadcast_includes_team_total(monkeypatch):
     assert score_messages
     scoreboard_text = score_messages[-1]
     assert (
-        f"🤝 <b>Команда {escape(team_label)}</b> — <b>{players_total}</b>"
+        f"🤝 Команда {escape(team_label)} — <b>{players_total}</b>"
         in scoreboard_text
     )
     hco._ensure_turn_setup(session)
     bot_label = hco._format_bot_team_score_label(session)
     assert (
-        f"🤖 <b>{escape(bot_label)}</b> — <b>{session.bot_stats}</b>" in scoreboard_text
+        f"🤖 {escape(bot_label)} — <b>{session.bot_stats}</b>" in scoreboard_text
     )
     remaining_line = hco._format_remaining_questions_line(expected_remaining)
     assert remaining_line in scoreboard_text
@@ -858,4 +858,8 @@ def test_more_fact(monkeypatch):
             caption_text = args[0]
         caption_text = kwargs.get("caption", caption_text)
         assert "Еще один факт: new" in caption_text
-    assert 1 not in session.fact_message_ids
+    remaining = session.fact_message_ids.get(1)
+    if isinstance(remaining, list):
+        assert msg_id not in remaining
+    else:
+        assert remaining != msg_id

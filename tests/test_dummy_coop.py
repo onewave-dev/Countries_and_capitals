@@ -238,7 +238,7 @@ def test_cmd_coop_test_spawns_dummy_partner(monkeypatch):
     assert any("отвечает верно" in _entry_text(entry) for entry in bot.sent)
     final_text = bot.sent[-1][1]
     assert final_text.startswith("🏁 <b>Игра завершена!</b>")
-    assert "<b>Команда Бота Атлас и Бота Глобус</b>" in final_text
+    assert "Команда Бота Атлас и Бота Глобус — <b>" in final_text
     assert all(chat_id is not None for chat_id, *_ in bot.sent)
     assert session.player_stats.get(hco.DUMMY_PLAYER_ID, 0) == 0
     assert getattr(session, "finished", False)
@@ -308,10 +308,10 @@ def test_scoreboard_format_for_single_player(monkeypatch):
     scoreboard_text = score_messages[-1]
 
     assert (
-        "🤝 <b>Команда Тестер и Бот-помощник</b>" in scoreboard_text
+        "🤝 Команда Тестер и Бот-помощник — <b>" in scoreboard_text
     ), "player heading should not contain parentheses"
     assert (
-        "🤖 <b>Команда Бот Атлас и Бот Глобус</b>" in scoreboard_text
+        "🤖 Команда Бот Атлас и Бот Глобус — <b>" in scoreboard_text
     ), "bot heading should list both bot names without emoji"
     assert "•" not in scoreboard_text, "per-bot breakdown should be removed"
 
