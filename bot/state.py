@@ -145,7 +145,6 @@ class CoopSession:
     continent_filter: str | None = None
     continent_label: str | None = None
     mode: str = "mixed"
-    difficulty: str = ""
     question_message_ids: Dict[int | str, int | None] = field(default_factory=dict)
     remaining_pairs: List[Dict[str, Any]] = field(default_factory=list)
     current_pair: Dict[str, Any] | None = None

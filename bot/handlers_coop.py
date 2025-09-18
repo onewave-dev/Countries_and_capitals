@@ -30,7 +30,6 @@ from .keyboards import (
     coop_answer_kb,
     coop_join_kb,
     coop_invite_kb,
-    coop_difficulty_kb,
     coop_continent_kb,
     coop_fact_more_kb,
     coop_finish_kb,
@@ -61,8 +60,8 @@ BOT_TEAM_GENITIVE_NAMES = {
     BOT_GLOBUS_ID: "Бота Глобуса",
 }
 
-# Probability of the bot answering correctly depending on the difficulty.
-ACCURACY = {"easy": 0.7, "medium": 0.8, "hard": 0.9}
+# Probability of the bot answering correctly in the cooperative mode.
+BOT_BASE_ACCURACY = 0.9
 
 # Timing configuration for cooperative games (in seconds).
 FIRST_TURN_DELAY = 8
@@ -257,7 +256,6 @@ def _store_rematch_data(
         "player_chats": dict(session.player_chats),
         "continent_filter": session.continent_filter,
         "continent_label": session.continent_label,
-        "difficulty": session.difficulty,
         "mode": session.mode,
         "admin_test": DUMMY_PLAYER_ID in session.players and len(human_players) == 1,
     }
@@ -453,8 +451,7 @@ async def _handle_bot_turn(
         await _next_turn(context, session, False, participant=bot_id)
         return
 
-    bot_accuracy = ACCURACY.get(session.difficulty, 0.7)
-    bot_correct = random.random() < bot_accuracy
+    bot_correct = random.random() < BOT_BASE_ACCURACY
     bot_name = _get_participant_display_name(session, bot_id)
 
     if bot_correct:
@@ -997,7 +994,7 @@ async def cmd_coop_test(
 
     sessions = _get_sessions(context)
     session_id = uuid.uuid4().hex[:8]
-    session = CoopSession(session_id=session_id, difficulty="medium")
+    session = CoopSession(session_id=session_id)
     human_id = user.id
     human_chat_id = chat.id if chat else None
     session.players = [human_id, DUMMY_PLAYER_ID]
@@ -1054,18 +1051,13 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         else:
             context.user_data.pop("coop_pending", None)
-            if session.continent_filter is not None or session.continent_label:
-                continent_name = (
-                    session.continent_label
-                    or session.continent_filter
-                    or "Весь мир"
-                )
+            if session.continent_label:
+                continent_name = session.continent_label
                 await update.message.reply_text(
                     (
                         "Имя сохранено. Континент: "
-                        f"{continent_name}. Выберите сложность соперника."
+                        f"{continent_name}. Матч начнётся через несколько секунд!"
                     ),
-                    reply_markup=coop_difficulty_kb(session_id, user_id),
                 )
                 for pid in session.players:
                     if pid == user_id:
@@ -1078,14 +1070,15 @@ async def msg_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             chat_id,
                             (
                                 "Второй игрок присоединился. Континент: "
-                                f"{continent_name}. Выберите сложность соперника."
+                                f"{continent_name}. Матч начнётся через несколько секунд!"
                             ),
-                            reply_markup=coop_difficulty_kb(session_id, pid),
                         )
                     except (TelegramError, HTTPError) as e:
                         logger.warning(
-                            "Failed to send difficulty selection: %s", e
+                            "Failed to send coop start notice: %s", e
                         )
+                if len(session.players) >= 2:
+                    await _start_game(context, session)
             else:
                 await update.message.reply_text(
                     "Имя сохранено. Выберите континент.",
@@ -1260,7 +1253,7 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if update.effective_user.id not in session.players:
             await q.answer("Не ваша кнопка", show_alert=True)
             return
-        if session.continent_filter is not None:
+        if session.continent_label is not None:
             await q.answer("Континент уже выбран", show_alert=True)
             try:
                 await q.edit_message_reply_markup(None)
@@ -1281,11 +1274,13 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 await context.bot.send_message(
                     chat_id,
-                    "Континент выбран. Выберите сложность соперника.",
-                    reply_markup=coop_difficulty_kb(session_id, pid),
+                    "Континент выбран. Матч начнётся через несколько секунд!",
+                    parse_mode="HTML",
                 )
             except (TelegramError, HTTPError) as e:
-                logger.warning("Failed to send difficulty selection: %s", e)
+                logger.warning("Failed to send coop start notice: %s", e)
+        if len(session.players) >= 2:
+            await _start_game(context, session)
         return
 
     if len(parts) == 2:
@@ -1349,17 +1344,14 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         stored_continent_filter = rematch_data.get("continent_filter")
         stored_continent_label = rematch_data.get("continent_label")
-        stored_difficulty = rematch_data.get("difficulty", "")
         is_admin_test = bool(rematch_data.get("admin_test"))
 
         if is_admin_test:
             new_session.continent_filter = stored_continent_filter
             new_session.continent_label = stored_continent_label
-            new_session.difficulty = stored_difficulty or "medium"
         else:
             new_session.continent_filter = None
             new_session.continent_label = None
-            new_session.difficulty = stored_difficulty or ""
 
         sessions[new_session_id] = new_session
         if store is not None:
@@ -1381,16 +1373,9 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if previous_continent is None and stored_continent_filter is None:
             previous_continent = "Весь мир"
 
-        difficulty_titles = {
-            "easy": "🟢 70%", "medium": "🟡 80%", "hard": "🔴 90%"
-        }
-        previous_difficulty = difficulty_titles.get(stored_difficulty, "")
-
         message_lines = ["🔁 Рематч готов!", "Выберите континент для новой игры."]
         if previous_continent:
             message_lines.append(f"Предыдущий выбор: {previous_continent}.")
-        if previous_difficulty:
-            message_lines.append(f"Прошлая сложность: {previous_difficulty}.")
 
         text = "\n".join(message_lines)
         markup = coop_continent_kb(new_session_id)
@@ -1516,33 +1501,6 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                 except (TelegramError, HTTPError) as e:
                     logger.warning("Failed to notify coop host about join: %s", e)
-        return
-
-    if action == "diff":
-        session_id = parts[2]
-        player_id = int(parts[3])
-        difficulty = parts[4]
-        session = get_session(session_id)
-        if not session:
-            await q.answer()
-            return
-        if update.effective_user.id not in session.players or player_id != update.effective_user.id:
-            await q.answer("Не ваша кнопка", show_alert=True)
-            return
-        if session.difficulty:
-            await q.answer("Сложность уже выбрана", show_alert=True)
-            try:
-                await q.edit_message_reply_markup(None)
-            except Exception:
-                pass
-            return
-        session.difficulty = difficulty
-        await q.answer()
-        try:
-            await q.edit_message_reply_markup(None)
-        except Exception:
-            pass
-        await _start_game(context, session)
         return
 
     if action == "more_fact":
