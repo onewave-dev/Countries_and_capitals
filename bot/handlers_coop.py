@@ -20,7 +20,7 @@ from telegram import (
     User,
 )
 from telegram.ext import ContextTypes
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError
 from httpx import HTTPError
 
 from app import DATA
@@ -1527,31 +1527,51 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session_id = parts[2]
         session = get_session(session_id)
         if not session:
-            await q.answer()
+            try:
+                await q.answer()
+            except BadRequest as err:
+                logger.debug("Skipping stale callback answer for extra fact: %s", err)
             return
         pid = update.effective_user.id
         if pid not in session.players:
-            await q.answer("Не ваша кнопка", show_alert=True)
+            try:
+                await q.answer("Не ваша кнопка", show_alert=True)
+            except BadRequest as err:
+                logger.debug(
+                    "Skipping stale callback alert for foreign player extra fact: %s", err
+                )
             return
         message = q.message
         if not message:
-            await q.answer()
+            try:
+                await q.answer()
+            except BadRequest as err:
+                logger.debug("Skipping stale callback answer without message: %s", err)
             return
         message_id = message.message_id
         metadata = session.fact_message_ids.get(message_id)
         if not metadata:
-            await q.answer()
+            try:
+                await q.answer()
+            except BadRequest as err:
+                logger.debug("Skipping stale callback answer without metadata: %s", err)
             return
 
         group_id = metadata.get("group")
         group = session.fact_message_groups.get(group_id) if group_id else None
         if group and group.get("resolved"):
-            await q.answer()
+            try:
+                await q.answer()
+            except BadRequest as err:
+                logger.debug("Skipping stale callback answer for resolved group: %s", err)
             return
         if group:
             group["resolved"] = True
 
-        await q.answer()
+        try:
+            await q.answer()
+        except BadRequest as err:
+            logger.debug("Skipping stale callback answer before generating extra fact: %s", err)
         country = str(metadata.get("country") or session.fact_subject or "")
         original_fact = str(metadata.get("fact") or session.fact_text or "")
         extra = await generate_llm_fact(country, original_fact)
