@@ -618,15 +618,22 @@ async def _broadcast_correct_answer(
                     or getattr(msg, "text", None)
                     or caption_text
                 )
-                session.fact_message_ids[msg.message_id] = {
-                    "chat_id": chat_id,
+                key = _make_fact_message_key(chat_id, getattr(msg, "message_id", None))
+                if key is None:
+                    logger.debug(
+                        "Skipping fact metadata registration without key for chat %s", chat_id
+                    )
+                    continue
+                session.fact_message_ids[key] = {
+                    "chat_id": key[0],
+                    "message_id": key[1],
                     "country": country,
                     "fact": fact,
                     "base_text": base_text,
                     "has_photo": bool(getattr(msg, "photo", None)),
                     "group": group_id,
                 }
-                group_entry["message_ids"].append(msg.message_id)
+                group_entry["message_ids"].append(key)
         except (TelegramError, HTTPError) as e:
             logger.warning("Failed to send correct answer summary: %s", e)
 
@@ -707,13 +714,23 @@ def _format_bot_team_score_label(session: CoopSession) -> str:
     return f"Команда {names_part}"
 
 
+def _make_fact_message_key(
+    chat_id: object, message_id: object
+) -> tuple[int, int] | None:
+    """Return a normalized key for tracking fact message metadata."""
+
+    if chat_id is None or message_id is None:
+        return None
+    try:
+        return (int(chat_id), int(message_id))
+    except (TypeError, ValueError):
+        return None
+
+
 def _has_pending_fact_messages(session: CoopSession) -> bool:
     """Return ``True`` if there are queued fact messages for extra facts."""
 
-    for value in session.fact_message_ids.values():
-        if value:
-            return True
-    return False
+    return any(bool(value) for value in session.fact_message_ids.values())
 
 
 def _format_remaining_questions_line(count: int) -> str:
@@ -1548,9 +1565,36 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except BadRequest as err:
                 logger.debug("Skipping stale callback answer without message: %s", err)
             return
-        message_id = message.message_id
-        metadata = session.fact_message_ids.get(message_id)
-        if not metadata:
+        message_id = getattr(message, "message_id", None)
+        chat = getattr(message, "chat", None)
+        chat_id = getattr(chat, "id", None)
+        key = _make_fact_message_key(chat_id, message_id)
+        metadata = session.fact_message_ids.get(key) if key else None
+        normalized_message_id: int | None = None
+        if message_id is not None:
+            try:
+                normalized_message_id = int(message_id)
+            except (TypeError, ValueError):
+                normalized_message_id = None
+        if not metadata and normalized_message_id is not None:
+            for candidate_key, meta in session.fact_message_ids.items():
+                if (
+                    isinstance(candidate_key, tuple)
+                    and len(candidate_key) == 2
+                    and candidate_key[1] == normalized_message_id
+                ):
+                    metadata = meta
+                    key = candidate_key
+                    break
+                if meta.get("message_id") == normalized_message_id:
+                    metadata = meta
+                    fallback_key = _make_fact_message_key(
+                        meta.get("chat_id"), normalized_message_id
+                    )
+                    if fallback_key:
+                        key = fallback_key
+                    break
+        if not metadata or not key:
             try:
                 await q.answer()
             except BadRequest as err:
@@ -1576,30 +1620,56 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         original_fact = str(metadata.get("fact") or session.fact_text or "")
         extra = await generate_llm_fact(country, original_fact)
 
-        target_message_ids: list[int] = []
+        target_entries: list[tuple[int, int]] = []
+        seen_entries: set[tuple[int, int]] = set()
         if group and group.get("message_ids"):
-            target_message_ids.extend(int(mid) for mid in group["message_ids"])
-        if message_id not in target_message_ids:
-            target_message_ids.append(message_id)
+            for entry in group["message_ids"]:
+                entry_key: tuple[int, int] | None = None
+                if isinstance(entry, tuple) and len(entry) == 2:
+                    entry_key = _make_fact_message_key(entry[0], entry[1])
+                elif isinstance(entry, list) and len(entry) == 2:
+                    entry_key = _make_fact_message_key(entry[0], entry[1])
+                else:
+                    candidate_id: int | None = None
+                    try:
+                        candidate_id = int(entry)
+                    except (TypeError, ValueError):
+                        candidate_id = None
+                    if candidate_id is not None:
+                        for candidate_key in session.fact_message_ids.keys():
+                            if (
+                                isinstance(candidate_key, tuple)
+                                and len(candidate_key) == 2
+                                and candidate_key[1] == candidate_id
+                            ):
+                                entry_key = candidate_key
+                                break
+                if entry_key and entry_key not in seen_entries:
+                    seen_entries.add(entry_key)
+                    target_entries.append(entry_key)
 
-        for mid in target_message_ids:
-            meta = session.fact_message_ids.get(mid)
+        if key not in seen_entries:
+            seen_entries.add(key)
+            target_entries.append(key)
+
+        for entry_chat_id, entry_message_id in target_entries:
+            meta = session.fact_message_ids.get((entry_chat_id, entry_message_id))
             if not meta:
                 continue
             base_text = str(meta.get("base_text") or "")
             if not base_text:
-                base_text = message.caption or message.text or ""
+                base_text = getattr(message, "caption", None) or getattr(message, "text", None) or ""
             base = base_text.replace(
                 "\n\nНажми кнопку ниже, чтобы узнать еще один факт",
                 "",
             )
-            chat_id = meta.get("chat_id") or getattr(message.chat, "id", None)
+            chat_id = meta.get("chat_id") or entry_chat_id
             has_photo = bool(meta.get("has_photo"))
             try:
                 if has_photo:
                     await context.bot.edit_message_caption(
                         chat_id=chat_id,
-                        message_id=mid,
+                        message_id=entry_message_id,
                         caption=f"{base}\n\nЕще один факт: {extra}",
                         reply_markup=None,
                     )
@@ -1607,13 +1677,13 @@ async def cb_coop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     await context.bot.edit_message_text(
                         text=f"{base}\n\nЕще один факт: {extra}",
                         chat_id=chat_id,
-                        message_id=mid,
+                        message_id=entry_message_id,
                         reply_markup=None,
                     )
             except (TelegramError, HTTPError) as e:
                 logger.warning("Failed to send extra fact: %s", e)
             finally:
-                session.fact_message_ids.pop(mid, None)
+                session.fact_message_ids.pop((entry_chat_id, entry_message_id), None)
 
         if group_id:
             session.fact_message_groups.pop(group_id, None)

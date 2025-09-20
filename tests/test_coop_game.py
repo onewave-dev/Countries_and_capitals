@@ -79,6 +79,10 @@ def _setup_session(monkeypatch, continent=None):
     return hco, session, context, bot, calls
 
 
+def _bound_async(method, instance):
+    return method.__get__(instance, instance.__class__)
+
+
 def _split_question_text(text):
     if not text:
         return None, text
@@ -844,8 +848,8 @@ def test_more_fact(monkeypatch):
     asyncio.run(hco.cb_coop(update, context))
 
     target_entries = {
-        msg_id: meta
-        for msg_id, meta in session.fact_message_ids.items()
+        key: meta
+        for key, meta in session.fact_message_ids.items()
         if meta.get("country") == "Франция" and meta.get("chat_id") in {1, 2}
     }
     assert len(target_entries) == 2
@@ -853,12 +857,14 @@ def test_more_fact(monkeypatch):
     assert len(group_ids) == 1
     group_id = next(iter(group_ids))
     player_messages = {
-        meta["chat_id"]: (msg_id, meta)
-        for msg_id, meta in target_entries.items()
+        meta["chat_id"]: (key, meta)
+        for key, meta in target_entries.items()
     }
     assert set(player_messages) == {1, 2}
-    msg_id, metadata = player_messages[1]
-    other_msg_id, _ = player_messages[2]
+    msg_key, _ = player_messages[1]
+    other_msg_key, _ = player_messages[2]
+    msg_id = msg_key[1]
+    other_msg_id = other_msg_key[1]
     caption = next(
         text for chat_id, text, _ in bot.sent if chat_id == 1 and text and "Франция" in text
     )
@@ -904,3 +910,71 @@ def test_more_fact(monkeypatch):
     asyncio.run(hco.cb_coop(update_more_second, context))
     assert len([entry for entry in bot.edited if entry[0] == "text"]) == 2
     assert q_more_second.answer.await_count == 1
+
+
+def test_more_fact_handles_duplicate_message_ids(monkeypatch):
+    hco, session, context, bot, _ = _setup_session(monkeypatch, continent="Европа")
+
+    session.current_pair = {
+        "country": "Италия",
+        "capital": "Рим",
+        "type": "country_to_capital",
+        "prompt": "?",
+        "options": ["Рим"],
+        "correct": "Рим",
+    }
+    session.remaining_pairs = [session.current_pair]
+    session.turn_index = 0
+    session.total_pairs = 1
+
+    monkeypatch.setattr(hco, "get_static_fact", lambda *_: "Интересный факт: base")
+    extra_fact = AsyncMock(return_value="extra")
+    monkeypatch.setattr(hco, "generate_llm_fact", extra_fact)
+
+    async def send_message_same(self, chat_id, text, reply_markup=None, parse_mode=None):
+        self.sent.append((chat_id, text, reply_markup))
+        return SimpleNamespace(message_id=777, text=text)
+
+    bot.send_message = _bound_async(send_message_same, bot)
+    bot.edited.clear()
+
+    callback = SimpleNamespace(
+        data=f"coop:ans:{session.session_id}:1:0",
+        answer=AsyncMock(),
+        edit_message_reply_markup=AsyncMock(),
+        message=SimpleNamespace(chat=SimpleNamespace(id=1)),
+    )
+    update = SimpleNamespace(callback_query=callback, effective_user=SimpleNamespace(id=1))
+
+    asyncio.run(hco.cb_coop(update, context))
+
+    assert len(session.fact_message_ids) == 2
+    first_key = next(iter(session.fact_message_ids))
+    metadata = session.fact_message_ids[first_key]
+    message = SimpleNamespace(
+        message_id=first_key[1],
+        chat=SimpleNamespace(id=first_key[0]),
+        caption=None,
+        text=metadata.get("base_text"),
+    )
+
+    q_more = SimpleNamespace(
+        data=f"coop:more_fact:{session.session_id}",
+        message=message,
+        answer=AsyncMock(),
+    )
+    update_more = SimpleNamespace(callback_query=q_more, effective_user=SimpleNamespace(id=1))
+
+    asyncio.run(hco.cb_coop(update_more, context))
+
+    edited_entries = [entry for entry in bot.edited if entry[0] == "text"]
+    assert len(edited_entries) == 2
+    assert {chat_id for _, chat_id, *_ in edited_entries} == set(session.player_chats.values())
+    assert {msg_id for _, _, msg_id, *_ in edited_entries} == {first_key[1]}
+    for entry in edited_entries:
+        assert "Еще один факт: extra" in entry[3]
+
+    assert not session.fact_message_ids
+    assert not session.fact_message_groups
+    assert q_more.answer.await_count == 1
+    assert extra_fact.await_count == 1
