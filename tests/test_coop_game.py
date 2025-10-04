@@ -736,7 +736,19 @@ def test_world_mode_limit(monkeypatch):
 def test_score_broadcast_includes_team_total(monkeypatch):
     hco, session, context, bot, _ = _setup_session(monkeypatch, continent="Европа")
     asyncio.run(hco._start_game(context, session))
+    hco._ensure_turn_setup(session)
+    order_length = max(len(session.turn_order), 1)
+
     asyncio.run(hco._next_turn(context, session, True))
+    interim_scores = [
+        text
+        for _, text, *_ in bot.sent
+        if text and text.startswith("📊 <b>Текущий счёт</b>")
+    ]
+    assert not interim_scores, "scoreboard should not be broadcast mid-round"
+
+    for _ in range(order_length - 1):
+        asyncio.run(hco._next_turn(context, session, False))
 
     score_messages = [
         text
