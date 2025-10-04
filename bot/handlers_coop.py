@@ -826,11 +826,10 @@ async def _next_turn(
 
     if score_changed:
         logger.debug(
-            "Delaying cooperative scoreboard for session %s by %s seconds",
+            "Broadcasting cooperative scoreboard immediately for session %s and waiting %s seconds afterwards",
             session.session_id,
-            TURN_TRANSITION_DELAY,
+            POST_SCOREBOARD_DELAY,
         )
-        await asyncio.sleep(TURN_TRANSITION_DELAY)
         if not pairs_left:
             await _finish_game(context, session)
             return
