@@ -508,16 +508,9 @@ def test_bot_takes_turn_after_second_player(monkeypatch):
         for _, text, *_ in bot.sent
         if text and text.startswith("📊 <b>Текущий счёт</b>")
     ]
-    assert score_messages, "scoreboard should be broadcast after the first correct answer"
-
-    assert any(
-        "Осталось <b>" in message for message in score_messages
-    ), "intermediate scoreboard should reflect pending questions"
-
-    final_remaining_line = hco._format_remaining_questions_line(0)
-    assert all(
-        final_remaining_line not in message for message in score_messages
-    ), "final scoreboard should be omitted when no pairs remain"
+    assert (
+        not score_messages
+    ), "scoreboard should wait for a full round and is skipped when the match ends"
 
     assert session.current_pair is None
     assert session.player_stats == {1: 1, 2: 1}

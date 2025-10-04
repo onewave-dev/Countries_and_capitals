@@ -307,6 +307,7 @@ async def _start_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession) 
     session.bot_team = []
     session.turn_order = []
     session.bot_turn_index = 0
+    session.turns_since_scoreboard = 0
     _ensure_turn_setup(session)
     session.total_pairs = len(session.remaining_pairs)
     session.question_message_ids.clear()
@@ -800,8 +801,6 @@ async def _next_turn(
         await _finish_game(context, session)
         return
 
-    score_changed = False
-
     if correct:
         if isinstance(participant, int):
             session.player_stats[participant] = session.player_stats.get(participant, 0) + 1
@@ -813,7 +812,6 @@ async def _next_turn(
         if session.remaining_pairs:
             session.remaining_pairs.pop(0)
         session.current_pair = None
-        score_changed = True
     elif isinstance(participant, int):
         session.player_stats.setdefault(participant, session.player_stats.get(participant, 0))
 
@@ -822,18 +820,35 @@ async def _next_turn(
     else:
         session.turn_index = 0
 
+    order_length = len(session.turn_order)
+    if order_length:
+        session.turns_since_scoreboard += 1
+    else:
+        session.turns_since_scoreboard = 0
+
     pairs_left = bool(session.remaining_pairs)
 
-    if score_changed:
+    should_finish = not pairs_left
+    should_broadcast = (
+        not should_finish
+        and order_length > 0
+        and (
+            session.turns_since_scoreboard >= order_length or session.turn_index == 0
+        )
+    )
+
+    if should_finish:
+        await _finish_game(context, session)
+        return
+
+    if should_broadcast:
         logger.debug(
-            "Broadcasting cooperative scoreboard immediately for session %s and waiting %s seconds afterwards",
+            "Broadcasting cooperative scoreboard after full round for session %s and waiting %s seconds afterwards",
             session.session_id,
             POST_SCOREBOARD_DELAY,
         )
-        if not pairs_left:
-            await _finish_game(context, session)
-            return
         await _broadcast_score(context, session)
+        session.turns_since_scoreboard = 0
         await asyncio.sleep(POST_SCOREBOARD_DELAY)
     else:
         logger.debug(
@@ -855,6 +870,7 @@ async def _finish_game(context: ContextTypes.DEFAULT_TYPE, session: CoopSession)
 
     _store_rematch_data(context, session)
     session.finished = True
+    session.turns_since_scoreboard = 0
     if not _has_pending_fact_messages(session):
         _remove_session(context, session)
     _ensure_turn_setup(session)

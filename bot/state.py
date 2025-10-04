@@ -154,6 +154,7 @@ class CoopSession:
     bot_team_score: int = 0
     turn_order: List[int | str] = field(default_factory=list)
     bot_turn_index: int = 0
+    turns_since_scoreboard: int = 0
     total_pairs: int = 0
     fact_message_ids: Dict[tuple[int, int], Dict[str, Any]] = field(default_factory=dict)
     fact_message_groups: Dict[str, Dict[str, Any]] = field(default_factory=dict)
