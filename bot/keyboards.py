@@ -228,7 +228,7 @@ def cards_subcategories_kb() -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(
-                "Совпадает со страной", callback_data="cards:sub:matching"
+                "Столица совпадает со страной", callback_data="cards:sub:matching"
             )
         ],
         [
