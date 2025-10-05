@@ -206,6 +206,54 @@ def cards_answer_kb(prefix: str = "cards") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def cards_mode_kb() -> InlineKeyboardMarkup:
+    """Keyboard for selecting the study scope before starting cards."""
+
+    rows = [
+        [InlineKeyboardButton("Учить все", callback_data="cards:mode:all")],
+        [
+            InlineKeyboardButton(
+                "Учить по подкатегориям", callback_data="cards:mode:subsets"
+            )
+        ],
+        [InlineKeyboardButton("Назад", callback_data="cards:back:continent")],
+        [InlineKeyboardButton("В меню", callback_data="cards:menu")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def cards_subcategories_kb() -> InlineKeyboardMarkup:
+    """Keyboard for selecting a concrete flash-card subcategory."""
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                "Совпадает со страной", callback_data="cards:sub:matching"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "Столица на выбранную букву", callback_data="cards:sub:letter"
+            )
+        ],
+        [InlineKeyboardButton("Остальные столицы", callback_data="cards:sub:other")],
+        [InlineKeyboardButton("Назад", callback_data="cards:back:mode")],
+        [InlineKeyboardButton("В меню", callback_data="cards:menu")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def cards_preview_kb(back_action: str) -> InlineKeyboardMarkup:
+    """Keyboard presented during the preview step before launching cards."""
+
+    rows = [
+        [InlineKeyboardButton("Перейти к карточкам", callback_data="cards:start")],
+        [InlineKeyboardButton("Назад", callback_data=back_action)],
+        [InlineKeyboardButton("В меню", callback_data="cards:menu")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 def fact_more_kb(prefix: str = "cards") -> InlineKeyboardMarkup:
     """Keyboard with a single button to request another fact.
 
