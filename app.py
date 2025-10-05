@@ -66,7 +66,7 @@ DATA = load_data()
 
 # ===== Keyboards & Handlers =====
 from bot.handlers_menu import cmd_start, cb_menu
-from bot.handlers_cards import cb_cards
+from bot.handlers_cards import cb_cards, msg_cards_letter
 from bot.handlers_sprint import cb_sprint
 from bot.handlers_test import cb_test
 from bot.handlers_coop import (
@@ -120,6 +120,11 @@ application.add_handler(CommandHandler("coop_cancel", cmd_coop_cancel))
 application.add_handler(CommandHandler("coop_test", cmd_coop_test))
 application.add_handler(CommandHandler("stats", cmd_stats))
 application.add_handler(CommandHandler(["quit", "exit"], cmd_quit))
+_card_letter_handler = MessageHandler(
+    filters.TEXT & ~filters.COMMAND, msg_cards_letter
+)
+_card_letter_handler.block = False
+application.add_handler(_card_letter_handler)
 coop_message_filters = (
     (filters.TEXT & ~filters.COMMAND)
     | filters.CONTACT
