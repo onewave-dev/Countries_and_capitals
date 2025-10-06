@@ -85,6 +85,50 @@ def test_cards_capital_question_includes_capital_line(monkeypatch):
     asyncio.run(run())
 
 
+def test_cards_letter_prompt_sends_separate_message():
+    async def run():
+        bot = DummyBot()
+        bot.delete_message = AsyncMock(return_value=True)
+        context = SimpleNamespace(
+            bot=bot,
+            user_data={
+                "card_setup": {
+                    "continent": "Европа",
+                    "countries": app.DATA.countries("Европа"),
+                    "mode": "subsets",
+                    "subcategory": None,
+                    "letter": None,
+                },
+                "card_subset": [],
+                "card_prompt_message_id": 9,
+            },
+        )
+
+        q = SimpleNamespace(
+            data="cards:sub:letter",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(chat_id=123, message_id=77),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_chat=SimpleNamespace(id=123),
+        )
+
+        await cb_cards(update, context)
+
+        bot.delete_message.assert_awaited_once_with(123, 9)
+        assert context.user_data["card_letter_pending"] is True
+        assert context.user_data["card_prompt_message_id"] != 9
+        assert bot.sent, "Letter prompt should be sent as a new message"
+        chat_id, text, markup = bot.sent[-1]
+        assert chat_id == 123
+        assert markup is None
+        assert text.startswith("📘 Флэш-карточки — Европа")
+
+    asyncio.run(run())
+
+
 def test_sprint_capital_question_includes_capital_line(monkeypatch):
     async def run():
         bot = DummyBot()
