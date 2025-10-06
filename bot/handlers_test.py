@@ -21,14 +21,30 @@ from .keyboards import (
     back_to_menu_kb,
     continent_kb,
     fact_more_kb,
+    main_menu_kb,
+    test_mode_kb,
+    test_subcategories_kb,
+    test_preview_kb,
 )
 from .questions import make_card_question
 from .flags import get_country_flag, get_flag_image_path
 from .facts import get_static_fact, generate_llm_fact
+try:  # pragma: no cover - allow importing without configured token during tests
+    from .handlers_menu import WELCOME, ADMIN_ID
+except (RuntimeError, ImportError):
+    WELCOME = "Привет!"
+    ADMIN_ID = 0
+from .subsets import (
+    cleanup_preview_messages,
+    select_countries_by_letter,
+    select_matching_countries,
+    select_remaining_countries,
+    show_preview,
+)
 
 logger = logging.getLogger(__name__)
 
-__all__ = ("cb_test",)
+__all__ = ("cb_test", "msg_test_letter")
 __test__ = False
 
 
@@ -109,6 +125,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     q = update.callback_query
     parts = q.data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
 
     if parts == ["test", "void"]:
         await q.answer()
@@ -116,14 +133,34 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if parts == ["test", "continent"]:
         await q.answer()
-        await q.edit_message_text(
-            "📝 Тест: выбери континент.",
-            reply_markup=continent_kb("test", include_menu=True, include_world=False),
-        )
+        await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        for key in (
+            "test_session",
+            "test_setup",
+            "test_subset",
+            "test_letter_pending",
+            "test_prompt_message_id",
+        ):
+            context.user_data.pop(key, None)
+        try:
+            await q.edit_message_text(
+                "📝 Тест: выбери континент.",
+                reply_markup=continent_kb("test", include_menu=True, include_world=False),
+            )
+        except (TelegramError, HTTPError) as exc:
+            logger.warning("Failed to show test continent selection: %s", exc)
         return
 
     if parts == ["test", "random30"]:
         await q.answer()
+        await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        for key in (
+            "test_setup",
+            "test_subset",
+            "test_letter_pending",
+            "test_prompt_message_id",
+        ):
+            context.user_data.pop(key, None)
         countries = DATA.countries()
         queue = random.sample(countries, k=min(30, len(countries)))
         session = TestSession(user_id=update.effective_user.id, queue=queue)
@@ -132,22 +169,307 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _next_question(update, context)
         return
 
-    if len(parts) == 2 and parts[0] == "test" and parts[1] not in {
+    setup: dict | None = context.user_data.get("test_setup")
+
+    if action == "menu":
+        await q.answer()
+        await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        for key in (
+            "test_session",
+            "test_setup",
+            "test_subset",
+            "test_letter_pending",
+            "test_prompt_message_id",
+        ):
+            context.user_data.pop(key, None)
+        try:
+            await q.edit_message_text(
+                WELCOME,
+                reply_markup=main_menu_kb(update.effective_user.id == ADMIN_ID),
+            )
+        except (TelegramError, HTTPError) as exc:
+            logger.warning("Failed to return to menu from test: %s", exc)
+        return
+
+    if action == "back":
+        await q.answer()
+        target = parts[2] if len(parts) > 2 else ""
+        await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        if target == "continent":
+            for key in (
+                "test_session",
+                "test_setup",
+                "test_subset",
+                "test_letter_pending",
+                "test_prompt_message_id",
+            ):
+                context.user_data.pop(key, None)
+            try:
+                await q.edit_message_text(
+                    "📝 Тест: выбери континент.",
+                    reply_markup=continent_kb(
+                        "test", include_menu=True, include_world=False
+                    ),
+                )
+            except (TelegramError, HTTPError) as exc:
+                logger.warning("Failed to show test continent selection: %s", exc)
+            return
+        if not setup:
+            try:
+                await q.edit_message_text(
+                    "Выбор континента не найден. Нажмите /start, чтобы начать заново.",
+                    reply_markup=main_menu_kb(update.effective_user.id == ADMIN_ID),
+                )
+            except (TelegramError, HTTPError) as exc:
+                logger.warning("Failed to handle missing test setup: %s", exc)
+            return
+        context.user_data.pop("test_subset", None)
+        context.user_data.pop("test_letter_pending", None)
+        context.user_data.pop("test_prompt_message_id", None)
+        if target == "mode":
+            text = (
+                f"📝 Тест — {setup['continent']}.\n"
+                "Выбери, как будем тестироваться."
+            )
+            try:
+                await q.edit_message_text(text, reply_markup=test_mode_kb())
+            except (TelegramError, HTTPError) as exc:
+                logger.warning("Failed to show test mode selection: %s", exc)
+            return
+        if target == "subcategory":
+            text = (
+                f"📝 Тест — {setup['continent']}.\n"
+                "Выбери подкатегорию."
+            )
+            try:
+                await q.edit_message_text(text, reply_markup=test_subcategories_kb())
+            except (TelegramError, HTTPError) as exc:
+                logger.warning("Failed to show test subcategories: %s", exc)
+            return
+        return
+
+    if action == "mode":
+        await q.answer()
+        if not setup:
+            try:
+                await q.edit_message_text(
+                    "Сначала выберите континент.",
+                    reply_markup=continent_kb("test", include_menu=True, include_world=False),
+                )
+            except (TelegramError, HTTPError) as exc:
+                logger.warning("Failed to prompt test continent: %s", exc)
+            return
+        option = parts[2] if len(parts) > 2 else ""
+        if option == "all":
+            setup["mode"] = "all"
+            setup["subcategory"] = None
+            setup["letter"] = None
+            await cleanup_preview_messages(update, context, "test", q.message.message_id)
+            context.user_data.pop("test_prompt_message_id", None)
+            subset = setup["countries"]
+            title = f"{setup['continent']} — все страны ({len(subset)}):\n"
+            if not await show_preview(
+                update,
+                context,
+                subset,
+                title,
+                "test:back:mode",
+                "test",
+                test_preview_kb,
+            ):
+                try:
+                    await q.edit_message_text(
+                        "Не удалось подготовить список. Попробуйте выбрать другую опцию.",
+                        reply_markup=test_mode_kb(),
+                    )
+                except (TelegramError, HTTPError) as exc:
+                    logger.warning("Failed to notify test preview error: %s", exc)
+            return
+        if option == "subsets":
+            setup["mode"] = "subsets"
+            setup["subcategory"] = None
+            setup["letter"] = None
+            context.user_data.pop("test_subset", None)
+            context.user_data.pop("test_letter_pending", None)
+            context.user_data.pop("test_prompt_message_id", None)
+            await cleanup_preview_messages(update, context, "test", q.message.message_id)
+            text = (
+                f"📝 Тест — {setup['continent']}.\n"
+                "Выбери подкатегорию."
+            )
+            try:
+                await q.edit_message_text(text, reply_markup=test_subcategories_kb())
+            except (TelegramError, HTTPError) as exc:
+                logger.warning("Failed to show test subcategories: %s", exc)
+            return
+        return
+
+    if action == "sub":
+        await q.answer()
+        if not setup:
+            try:
+                await q.edit_message_text(
+                    "Сначала выберите континент.",
+                    reply_markup=continent_kb("test", include_menu=True, include_world=False),
+                )
+            except (TelegramError, HTTPError) as exc:
+                logger.warning("Failed to prompt test continent: %s", exc)
+            return
+        option = parts[2] if len(parts) > 2 else ""
+        setup["mode"] = "subsets"
+        await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        if option == "matching":
+            setup["subcategory"] = "matching"
+            setup["letter"] = None
+            context.user_data.pop("test_prompt_message_id", None)
+            matches = select_matching_countries(setup["countries"])
+            if not matches:
+                text = (
+                    "Таких стран нет в выбранном континенте."
+                    "\nВыбери другую подкатегорию."
+                )
+                try:
+                    await q.edit_message_text(text, reply_markup=test_subcategories_kb())
+                except (TelegramError, HTTPError) as exc:
+                    logger.warning("Failed to show empty matching notice: %s", exc)
+                return
+            title = (
+                f"{setup['continent']} — совпадает со страной ({len(matches)}):\n"
+            )
+            if not await show_preview(
+                update,
+                context,
+                matches,
+                title,
+                "test:back:subcategory",
+                "test",
+                test_preview_kb,
+            ):
+                try:
+                    await q.edit_message_text(
+                        "Не удалось показать список. Попробуйте еще раз.",
+                        reply_markup=test_subcategories_kb(),
+                    )
+                except (TelegramError, HTTPError) as exc:
+                    logger.warning("Failed to notify test preview error: %s", exc)
+            return
+        if option == "letter":
+            setup["subcategory"] = "letter"
+            setup["letter"] = None
+            context.user_data["test_letter_pending"] = True
+            context.user_data.pop("test_subset", None)
+            text = (
+                f"📝 Тест — {setup['continent']}.\n"
+                "Введите букву, на которую начинается столица."
+            )
+            try:
+                msg = await q.edit_message_text(
+                    text, reply_markup=test_subcategories_kb()
+                )
+            except (TelegramError, HTTPError) as exc:
+                logger.warning("Failed to prompt test letter: %s", exc)
+            else:
+                context.user_data["test_prompt_message_id"] = msg.message_id
+            return
+        if option == "other":
+            setup["subcategory"] = "other"
+            setup["letter"] = None
+            context.user_data.pop("test_prompt_message_id", None)
+            matches = select_matching_countries(setup["countries"])
+            others = select_remaining_countries(setup["countries"], matches)
+            if not others:
+                text = (
+                    "Все столицы в этом континенте совпадают с названием страны."
+                    "\nВыбери другую подкатегорию."
+                )
+                try:
+                    await q.edit_message_text(text, reply_markup=test_subcategories_kb())
+                except (TelegramError, HTTPError) as exc:
+                    logger.warning("Failed to show empty other notice: %s", exc)
+                return
+            title = (
+                f"{setup['continent']} — остальные столицы ({len(others)}):\n"
+            )
+            if not await show_preview(
+                update,
+                context,
+                others,
+                title,
+                "test:back:subcategory",
+                "test",
+                test_preview_kb,
+            ):
+                try:
+                    await q.edit_message_text(
+                        "Не удалось показать список. Попробуйте еще раз.",
+                        reply_markup=test_subcategories_kb(),
+                    )
+                except (TelegramError, HTTPError) as exc:
+                    logger.warning("Failed to notify test preview error: %s", exc)
+            return
+        return
+
+    if action == "start":
+        await q.answer()
+        subset: list[str] | None = context.user_data.get("test_subset")
+        if not subset:
+            await q.answer("Список стран пуст. Выберите другую опцию.", show_alert=True)
+            return
+        await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        queue = list(subset)
+        random.shuffle(queue)
+        if not queue:
+            await q.answer("Список стран пуст. Выберите другую опцию.", show_alert=True)
+            return
+        session = TestSession(user_id=update.effective_user.id, queue=queue)
+        session.total_questions = len(queue)
+        context.user_data["test_session"] = session
+        context.user_data.pop("test_letter_pending", None)
+        context.user_data.pop("test_prompt_message_id", None)
+        await _next_question(update, context)
+        return
+
+    reserved = {
         "opt",
         "show",
         "skip",
         "next",
         "finish",
         "more_fact",
-    }:
+        "mode",
+        "sub",
+        "back",
+        "start",
+        "menu",
+        "continent",
+        "random30",
+    }
+    if len(parts) == 2 and parts[0] == "test" and action not in reserved:
         await q.answer()
         continent = parts[1]
-        queue = DATA.countries(continent)
-        random.shuffle(queue)
-        session = TestSession(user_id=update.effective_user.id, queue=queue)
-        session.total_questions = len(queue)
-        context.user_data["test_session"] = session
-        await _next_question(update, context)
+        countries = DATA.countries(continent if continent != "Весь мир" else None)
+        setup_data = {
+            "continent": continent,
+            "continent_filter": None if continent == "Весь мир" else continent,
+            "countries": countries,
+            "mode": None,
+            "subcategory": None,
+            "letter": None,
+        }
+        context.user_data["test_setup"] = setup_data
+        context.user_data.pop("test_subset", None)
+        context.user_data.pop("test_session", None)
+        context.user_data.pop("test_letter_pending", None)
+        context.user_data.pop("test_prompt_message_id", None)
+        await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        text = (
+            f"📝 Тест — {continent}.\n"
+            "Выбери, как будем тестироваться."
+        )
+        try:
+            await q.edit_message_text(text, reply_markup=test_mode_kb())
+        except (TelegramError, HTTPError) as exc:
+            logger.warning("Failed to show test mode selection: %s", exc)
         return
 
     session: TestSession | None = context.user_data.get("test_session")
@@ -315,3 +637,61 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await q.answer()
+
+
+async def msg_test_letter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle letter input for the "capital by letter" test subcategory."""
+
+    if not context.user_data.get("test_letter_pending"):
+        return
+
+    message = update.effective_message
+    text = (message.text or "").strip()
+
+    setup: dict | None = context.user_data.get("test_setup")
+    if not setup:
+        context.user_data.pop("test_letter_pending", None)
+        await message.reply_text(
+            "Настройка теста не найдена. Вернитесь в меню и выберите режим снова."
+        )
+        return
+
+    if len(text) != 1 or not text.isalpha():
+        await message.reply_text(
+            "Пожалуйста, введите одну букву без цифр и символов."
+        )
+        return
+
+    letter = text.upper()
+    subset = select_countries_by_letter(setup["countries"], text)
+    if not subset:
+        await message.reply_text(
+            "Столиц на эту букву не найдено. Попробуйте другую букву."
+        )
+        return
+
+    prompt_id = context.user_data.get("test_prompt_message_id")
+    keep_id = prompt_id if isinstance(prompt_id, int) else None
+    await cleanup_preview_messages(update, context, "test", keep_id)
+
+    title = (
+        f"{setup['continent']} — столицы на букву {letter} ({len(subset)}):\n"
+    )
+    if not await show_preview(
+        update,
+        context,
+        subset,
+        title,
+        "test:back:subcategory",
+        "test",
+        test_preview_kb,
+        origin_message_id=keep_id,
+    ):
+        await message.reply_text(
+            "Не удалось показать список. Попробуйте выбрать подкатегорию еще раз."
+        )
+        return
+
+    setup["letter"] = letter
+    context.user_data["test_letter_pending"] = False
+    context.user_data.pop("test_prompt_message_id", None)

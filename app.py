@@ -68,7 +68,7 @@ DATA = load_data()
 from bot.handlers_menu import cmd_start, cb_menu
 from bot.handlers_cards import cb_cards, msg_cards_letter
 from bot.handlers_sprint import cb_sprint
-from bot.handlers_test import cb_test
+from bot.handlers_test import cb_test, msg_test_letter
 from bot.handlers_coop import (
     cb_coop,
     cmd_coop_capitals,
@@ -125,6 +125,11 @@ _card_letter_handler = MessageHandler(
 )
 _card_letter_handler.block = False
 application.add_handler(_card_letter_handler)
+_test_letter_handler = MessageHandler(
+    filters.TEXT & ~filters.COMMAND, msg_test_letter
+)
+_test_letter_handler.block = False
+application.add_handler(_test_letter_handler)
 coop_message_filters = (
     (filters.TEXT & ~filters.COMMAND)
     | filters.CONTACT

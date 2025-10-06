@@ -18,6 +18,7 @@ if ht.DATA is None:  # pragma: no cover - defensive
     ht.DATA = app.DATA
 
 cb_test = ht.cb_test
+msg_test_letter = ht.msg_test_letter
 
 
 class DummyBot:
@@ -39,6 +40,25 @@ class DummyBot:
             message_id=self._mid, caption=caption, text=None, photo=[object()]
         )
 
+    async def edit_message_text(
+        self, chat_id, message_id, text, reply_markup=None, parse_mode=None
+    ):
+        self.sent.append((chat_id, text, reply_markup))
+        return SimpleNamespace(message_id=message_id, text=text, caption=None, photo=None)
+
+    async def delete_message(self, chat_id, message_id):
+        return True
+
+
+class DummyMessage:
+    def __init__(self, text: str, message_id: int):
+        self.text = text
+        self.message_id = message_id
+        self.replies: list[str] = []
+
+    async def reply_text(self, text: str):
+        self.replies.append(text)
+
 
 def test_full_test_flow(monkeypatch):
     async def run():
@@ -48,24 +68,69 @@ def test_full_test_flow(monkeypatch):
         bot = DummyBot()
         context = SimpleNamespace(bot=bot, user_data={})
 
-        # --- start session with random countries ---
-        q_start = SimpleNamespace(
-            data="test:random30",
+        # --- configure test flow via continent and mode selection ---
+        q_mode = SimpleNamespace(
+            data="test:continent",
             answer=AsyncMock(),
-            edit_message_text=AsyncMock(),
-            message=SimpleNamespace(chat_id=123),
+            edit_message_text=AsyncMock(
+                return_value=SimpleNamespace(message_id=1, text=None, caption=None, photo=None)
+            ),
+            message=SimpleNamespace(chat_id=123, message_id=1),
         )
         update = SimpleNamespace(
-            callback_query=q_start,
+            callback_query=q_mode,
             effective_chat=SimpleNamespace(id=123),
             effective_user=SimpleNamespace(id=1),
         )
+        await cb_test(update, context)
+        q_mode.edit_message_text.assert_awaited()
+
+        q_select = SimpleNamespace(
+            data="test:Европа",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(
+                return_value=SimpleNamespace(message_id=2, text=None, caption=None, photo=None)
+            ),
+            message=SimpleNamespace(chat_id=123, message_id=1),
+        )
+        update.callback_query = q_select
+        await cb_test(update, context)
+        setup = context.user_data["test_setup"]
+        assert setup["continent"] == "Европа"
+
+        q_mode_all = SimpleNamespace(
+            data="test:mode:all",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(chat_id=123, message_id=2),
+        )
+        update.callback_query = q_mode_all
+        await cb_test(update, context)
+        subset = context.user_data["test_subset"]
+        assert subset, "Preview subset should not be empty"
+        preview_messages = context.user_data["test_preview_messages"]
+        assert preview_messages, "Preview message ids should be stored"
+        start_markup = bot.sent[-1][2]
+        assert any(
+            getattr(btn, "callback_data", None) == "test:start"
+            for row in start_markup.inline_keyboard
+            for btn in row
+            if getattr(btn, "callback_data", None)
+        )
+
+        start_message_id = preview_messages[-1]
+        q_start = SimpleNamespace(
+            data="test:start",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(chat_id=123, message_id=start_message_id),
+        )
+        update.callback_query = q_start
         await cb_test(update, context)
 
         session = context.user_data["test_session"]
         assert session.total_questions == len(session.queue) + 1
 
-        # buttons should carry the test prefix
         markup = q_start.edit_message_text.await_args.kwargs["reply_markup"]
         assert all(
             btn.callback_data.startswith("test:")
@@ -136,6 +201,48 @@ def test_full_test_flow(monkeypatch):
         final = bot.sent[-1][1]
         assert final.startswith(
             f"{session.stats['correct']} правильных из {session.total_questions}"
+        )
+
+    asyncio.run(run())
+
+
+def test_letter_input_builds_preview(monkeypatch):
+    async def run():
+        bot = DummyBot()
+        context = SimpleNamespace(
+            bot=bot,
+            user_data={
+                "test_setup": {
+                    "continent": "Европа",
+                    "countries": app.DATA.countries("Европа"),
+                    "mode": "subsets",
+                    "subcategory": "letter",
+                    "letter": None,
+                },
+                "test_letter_pending": True,
+                "test_prompt_message_id": 7,
+            },
+        )
+
+        message = DummyMessage("м", 7)
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(id=123),
+            effective_message=message,
+        )
+
+        await msg_test_letter(update, context)
+
+        assert context.user_data["test_subset"], "Letter subset should not be empty"
+        assert context.user_data["test_letter_pending"] is False
+        assert context.user_data.get("test_prompt_message_id") is None
+        preview_messages = context.user_data["test_preview_messages"]
+        assert preview_messages, "Preview messages should be registered"
+        start_markup = bot.sent[-1][2]
+        assert any(
+            getattr(btn, "callback_data", None) == "test:start"
+            for row in start_markup.inline_keyboard
+            for btn in row
+            if getattr(btn, "callback_data", None)
         )
 
     asyncio.run(run())
