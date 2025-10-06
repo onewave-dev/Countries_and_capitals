@@ -254,6 +254,54 @@ def cards_preview_kb(back_action: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def test_mode_kb() -> InlineKeyboardMarkup:
+    """Keyboard for selecting the test scope before preview."""
+
+    rows = [
+        [InlineKeyboardButton("Тестировать все", callback_data="test:mode:all")],
+        [
+            InlineKeyboardButton(
+                "Тестировать по подкатегориям", callback_data="test:mode:subsets"
+            )
+        ],
+        [InlineKeyboardButton("Назад", callback_data="test:back:continent")],
+        [InlineKeyboardButton("В меню", callback_data="test:menu")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def test_subcategories_kb() -> InlineKeyboardMarkup:
+    """Keyboard for selecting a test subcategory."""
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                "Столица совпадает со страной", callback_data="test:sub:matching"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "Столица на выбранную букву", callback_data="test:sub:letter"
+            )
+        ],
+        [InlineKeyboardButton("Остальные столицы", callback_data="test:sub:other")],
+        [InlineKeyboardButton("Назад", callback_data="test:back:mode")],
+        [InlineKeyboardButton("В меню", callback_data="test:menu")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def test_preview_kb(back_action: str) -> InlineKeyboardMarkup:
+    """Keyboard presented during the preview step before launching test."""
+
+    rows = [
+        [InlineKeyboardButton("Начать тест", callback_data="test:start")],
+        [InlineKeyboardButton("Назад", callback_data=back_action)],
+        [InlineKeyboardButton("В меню", callback_data="test:menu")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
 def fact_more_kb(prefix: str = "cards") -> InlineKeyboardMarkup:
     """Keyboard with a single button to request another fact.
 

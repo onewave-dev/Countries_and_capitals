@@ -3,7 +3,6 @@
 import logging
 import random
 import asyncio
-from collections.abc import Iterable
 
 from telegram import Update
 from telegram.error import TelegramError
@@ -25,145 +24,18 @@ from .keyboards import (
     continent_kb,
 )
 from .flags import get_country_flag, get_flag_image_path
-from .handlers_menu import WELCOME, ADMIN_ID, build_country_list_chunks
+from .handlers_menu import WELCOME, ADMIN_ID
 from .facts import get_static_fact, generate_llm_fact
+from .subsets import (
+    cleanup_preview_messages,
+    select_countries_by_letter,
+    select_matching_countries,
+    select_remaining_countries,
+    show_preview,
+)
 
 
 logger = logging.getLogger(__name__)
-
-
-def select_matching_countries(countries: Iterable[str]) -> set[str]:
-    """Return countries whose capital matches the country name."""
-
-    result: set[str] = set()
-    for country in countries:
-        capital = DATA.capital_by_country.get(country, "")
-        if capital and capital.casefold() == country.casefold():
-            result.add(country)
-    return result
-
-
-def select_countries_by_letter(countries: Iterable[str], letter: str) -> set[str]:
-    """Return countries whose capital starts with the provided ``letter``.
-
-    ``letter`` must consist of a single alphabetic character. Any other input
-    yields an empty result.
-    """
-
-    normalized = letter.strip()
-    if len(normalized) != 1 or not normalized.isalpha():
-        return set()
-
-    normalized = normalized.casefold()
-    result: set[str] = set()
-    for country in countries:
-        capital = DATA.capital_by_country.get(country, "").lstrip()
-        if not capital:
-            continue
-        first_char = capital[0].casefold()
-        if first_char == normalized:
-            result.add(country)
-    return result
-
-
-def select_remaining_countries(
-    countries: Iterable[str], *exclude_groups: Iterable[str]
-) -> set[str]:
-    """Return countries that are not present in ``exclude_groups``."""
-
-    excluded: set[str] = set()
-    for group in exclude_groups:
-        excluded.update(group)
-    return set(countries) - excluded
-
-
-async def _cleanup_preview_messages(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    keep_message_id: int | None,
-) -> None:
-    """Delete previously sent preview chunks leaving ``keep_message_id`` intact."""
-
-    message_ids: list[int] = context.user_data.pop("card_preview_messages", [])
-    context.user_data.pop("card_preview_chunks", None)
-    chat_id = update.effective_chat.id
-    for message_id in message_ids:
-        if keep_message_id is not None and message_id == keep_message_id:
-            continue
-        try:
-            await context.bot.delete_message(chat_id, message_id)
-        except (TelegramError, HTTPError) as exc:
-            logger.debug("Failed to delete preview message %s: %s", message_id, exc)
-
-
-async def _show_preview(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    subset: Iterable[str],
-    title: str,
-    back_action: str,
-    origin_message_id: int | None = None,
-) -> bool:
-    """Display preview list of countries before starting the session."""
-
-    countries = sorted(set(subset))
-    if not countries:
-        return False
-
-    context.user_data["card_subset"] = countries
-    chunks = build_country_list_chunks(countries, title)
-    context.user_data["card_preview_chunks"] = chunks
-    chat_id = update.effective_chat.id
-    message_id = origin_message_id
-    if message_id is None and update.callback_query:
-        message_id = update.callback_query.message.message_id
-    elif message_id is None and update.effective_message:
-        message_id = update.effective_message.message_id
-
-    preview_messages: list[int] = []
-
-    try:
-        if len(chunks) == 1:
-            if message_id is not None:
-                msg = await context.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=chunks[0],
-                    reply_markup=cards_preview_kb(back_action),
-                )
-                preview_messages.append(msg.message_id)
-            else:
-                msg = await context.bot.send_message(
-                    chat_id,
-                    chunks[0],
-                    reply_markup=cards_preview_kb(back_action),
-                )
-                preview_messages.append(msg.message_id)
-        else:
-            if message_id is not None:
-                msg = await context.bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=chunks[0],
-                )
-                preview_messages.append(msg.message_id)
-            else:
-                msg = await context.bot.send_message(chat_id, chunks[0])
-                preview_messages.append(msg.message_id)
-            for chunk in chunks[1:-1]:
-                sent = await context.bot.send_message(chat_id, chunk)
-                preview_messages.append(sent.message_id)
-            last = await context.bot.send_message(
-                chat_id, chunks[-1], reply_markup=cards_preview_kb(back_action)
-            )
-            preview_messages.append(last.message_id)
-    except (TelegramError, HTTPError) as exc:
-        logger.warning("Failed to display preview list: %s", exc)
-        return False
-
-    context.user_data["card_preview_messages"] = preview_messages
-    context.user_data.pop("card_letter_pending", None)
-    return True
 
 
 async def _next_card(
@@ -317,7 +189,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if action == "menu":
         await q.answer()
-        await _cleanup_preview_messages(update, context, q.message.message_id)
+        await cleanup_preview_messages(update, context, "card", q.message.message_id)
         context.user_data.pop("card_session", None)
         context.user_data.pop("card_setup", None)
         context.user_data.pop("card_subset", None)
@@ -337,7 +209,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if action == "back":
         await q.answer()
         target = parts[2] if len(parts) > 2 else ""
-        await _cleanup_preview_messages(update, context, q.message.message_id)
+        await cleanup_preview_messages(update, context, "card", q.message.message_id)
         if target == "continent":
             context.user_data.pop("card_session", None)
             context.user_data.pop("card_setup", None)
@@ -404,14 +276,20 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             setup["mode"] = "all"
             setup["subcategory"] = None
             setup["letter"] = None
-            await _cleanup_preview_messages(update, context, q.message.message_id)
+            await cleanup_preview_messages(update, context, "card", q.message.message_id)
             context.user_data.pop("card_prompt_message_id", None)
             subset = setup["countries"]
             title = (
                 f"{setup['continent']} — все страны ({len(subset)}):\n"
             )
-            if not await _show_preview(
-                update, context, subset, title, "cards:back:mode"
+            if not await show_preview(
+                update,
+                context,
+                subset,
+                title,
+                "cards:back:mode",
+                "card",
+                cards_preview_kb,
             ):
                 try:
                     await q.edit_message_text(
@@ -428,7 +306,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             context.user_data.pop("card_subset", None)
             context.user_data.pop("card_letter_pending", None)
             context.user_data.pop("card_prompt_message_id", None)
-            await _cleanup_preview_messages(update, context, q.message.message_id)
+            await cleanup_preview_messages(update, context, "card", q.message.message_id)
             text = (
                 f"📘 Флэш-карточки — {setup['continent']}.\n"
                 "Выбери подкатегорию."
@@ -455,7 +333,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         option = parts[2] if len(parts) > 2 else ""
         setup["mode"] = "subsets"
-        await _cleanup_preview_messages(update, context, q.message.message_id)
+        await cleanup_preview_messages(update, context, "card", q.message.message_id)
         if option == "matching":
             setup["subcategory"] = "matching"
             setup["letter"] = None
@@ -476,8 +354,14 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             title = (
                 f"{setup['continent']} — совпадает со страной ({len(matches)}):\n"
             )
-            if not await _show_preview(
-                update, context, matches, title, "cards:back:subcategory"
+            if not await show_preview(
+                update,
+                context,
+                matches,
+                title,
+                "cards:back:subcategory",
+                "card",
+                cards_preview_kb,
             ):
                 try:
                     await q.edit_message_text(
@@ -526,8 +410,14 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             title = (
                 f"{setup['continent']} — остальные столицы ({len(others)}):\n"
             )
-            if not await _show_preview(
-                update, context, others, title, "cards:back:subcategory"
+            if not await show_preview(
+                update,
+                context,
+                others,
+                title,
+                "cards:back:subcategory",
+                "card",
+                cards_preview_kb,
             ):
                 try:
                     await q.edit_message_text(
@@ -545,7 +435,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not subset:
             await q.answer("Список стран пуст. Выберите другую опцию.", show_alert=True)
             return
-        await _cleanup_preview_messages(update, context, q.message.message_id)
+        await cleanup_preview_messages(update, context, "card", q.message.message_id)
         continent_filter = None
         if setup:
             continent_filter = setup.get("continent_filter")
@@ -800,7 +690,7 @@ async def msg_cards_letter(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     prompt_id = context.user_data.get("card_prompt_message_id")
     keep_id = prompt_id if isinstance(prompt_id, int) else None
-    await _cleanup_preview_messages(update, context, keep_id)
+    await cleanup_preview_messages(update, context, "card", keep_id)
 
     setup["subcategory"] = "letter"
     setup["letter"] = letter
@@ -808,12 +698,14 @@ async def msg_cards_letter(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     title = (
         f"{setup['continent']} — столицы на букву {letter} ({len(subset)}):\n"
     )
-    if not await _show_preview(
+    if not await show_preview(
         update,
         context,
         subset,
         title,
         "cards:back:subcategory",
+        "card",
+        cards_preview_kb,
         origin_message_id=keep_id,
     ):
         await message.reply_text(
