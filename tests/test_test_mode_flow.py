@@ -248,6 +248,51 @@ def test_letter_input_builds_preview(monkeypatch):
     asyncio.run(run())
 
 
+def test_letter_prompt_sent_as_separate_message(monkeypatch):
+    async def run():
+        bot = DummyBot()
+        bot.delete_message = AsyncMock(return_value=True)
+        context = SimpleNamespace(
+            bot=bot,
+            user_data={
+                "test_setup": {
+                    "continent": "Африка",
+                    "countries": app.DATA.countries("Африка"),
+                    "mode": "subsets",
+                    "subcategory": None,
+                    "letter": None,
+                },
+                "test_subset": [],
+                "test_letter_pending": False,
+                "test_prompt_message_id": 11,
+            },
+        )
+
+        q = SimpleNamespace(
+            data="test:sub:letter",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(chat_id=123, message_id=5),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_chat=SimpleNamespace(id=123),
+        )
+
+        await cb_test(update, context)
+
+        bot.delete_message.assert_awaited_once_with(123, 11)
+        assert context.user_data["test_letter_pending"] is True
+        assert context.user_data["test_prompt_message_id"] != 11
+        assert bot.sent, "Letter prompt should be sent as a new message"
+        chat_id, text, markup = bot.sent[-1]
+        assert chat_id == 123
+        assert markup is None
+        assert text.startswith("📝 Тест — Африка")
+
+    asyncio.run(run())
+
+
 def test_show_answer_marks_unknown(monkeypatch):
     async def run():
         session = TestSession(user_id=1, queue=[])

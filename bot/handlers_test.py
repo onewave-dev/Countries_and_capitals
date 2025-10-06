@@ -48,6 +48,19 @@ __all__ = ("cb_test", "msg_test_letter")
 __test__ = False
 
 
+async def _clear_test_prompt(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int
+) -> None:
+    """Delete the pending letter prompt message if it exists."""
+
+    prompt_id = context.user_data.pop("test_prompt_message_id", None)
+    if isinstance(prompt_id, int):
+        try:
+            await context.bot.delete_message(chat_id, prompt_id)
+        except (TelegramError, HTTPError) as exc:
+            logger.debug("Failed to delete test letter prompt %s: %s", prompt_id, exc)
+
+
 async def _next_question(
     update: Update, context: ContextTypes.DEFAULT_TYPE, replace_message: bool = True
 ) -> None:
@@ -134,12 +147,12 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if parts == ["test", "continent"]:
         await q.answer()
         await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        await _clear_test_prompt(context, q.message.chat_id)
         for key in (
             "test_session",
             "test_setup",
             "test_subset",
             "test_letter_pending",
-            "test_prompt_message_id",
         ):
             context.user_data.pop(key, None)
         try:
@@ -154,11 +167,11 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if parts == ["test", "random30"]:
         await q.answer()
         await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        await _clear_test_prompt(context, q.message.chat_id)
         for key in (
             "test_setup",
             "test_subset",
             "test_letter_pending",
-            "test_prompt_message_id",
         ):
             context.user_data.pop(key, None)
         countries = DATA.countries()
@@ -174,12 +187,12 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if action == "menu":
         await q.answer()
         await cleanup_preview_messages(update, context, "test", q.message.message_id)
+        await _clear_test_prompt(context, q.message.chat_id)
         for key in (
             "test_session",
             "test_setup",
             "test_subset",
             "test_letter_pending",
-            "test_prompt_message_id",
         ):
             context.user_data.pop(key, None)
         try:
@@ -196,12 +209,12 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         target = parts[2] if len(parts) > 2 else ""
         await cleanup_preview_messages(update, context, "test", q.message.message_id)
         if target == "continent":
+            await _clear_test_prompt(context, q.message.chat_id)
             for key in (
                 "test_session",
                 "test_setup",
                 "test_subset",
                 "test_letter_pending",
-                "test_prompt_message_id",
             ):
                 context.user_data.pop(key, None)
             try:
@@ -225,7 +238,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         context.user_data.pop("test_subset", None)
         context.user_data.pop("test_letter_pending", None)
-        context.user_data.pop("test_prompt_message_id", None)
+        await _clear_test_prompt(context, q.message.chat_id)
         if target == "mode":
             text = (
                 f"📝 Тест — {setup['continent']}.\n"
@@ -265,7 +278,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             setup["subcategory"] = None
             setup["letter"] = None
             await cleanup_preview_messages(update, context, "test", q.message.message_id)
-            context.user_data.pop("test_prompt_message_id", None)
+            await _clear_test_prompt(context, q.message.chat_id)
             subset = setup["countries"]
             title = f"{setup['continent']} — все страны ({len(subset)}):\n"
             if not await show_preview(
@@ -291,7 +304,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             setup["letter"] = None
             context.user_data.pop("test_subset", None)
             context.user_data.pop("test_letter_pending", None)
-            context.user_data.pop("test_prompt_message_id", None)
+            await _clear_test_prompt(context, q.message.chat_id)
             await cleanup_preview_messages(update, context, "test", q.message.message_id)
             text = (
                 f"📝 Тест — {setup['continent']}.\n"
@@ -321,7 +334,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if option == "matching":
             setup["subcategory"] = "matching"
             setup["letter"] = None
-            context.user_data.pop("test_prompt_message_id", None)
+            await _clear_test_prompt(context, q.message.chat_id)
             matches = select_matching_countries(setup["countries"])
             if not matches:
                 text = (
@@ -358,13 +371,15 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             setup["letter"] = None
             context.user_data["test_letter_pending"] = True
             context.user_data.pop("test_subset", None)
+            await _clear_test_prompt(context, q.message.chat_id)
             text = (
                 f"📝 Тест — {setup['continent']}.\n"
                 "Введите букву, на которую начинается столица."
             )
             try:
-                msg = await q.edit_message_text(
-                    text, reply_markup=test_subcategories_kb()
+                msg = await context.bot.send_message(
+                    q.message.chat_id,
+                    text,
                 )
             except (TelegramError, HTTPError) as exc:
                 logger.warning("Failed to prompt test letter: %s", exc)
@@ -374,7 +389,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if option == "other":
             setup["subcategory"] = "other"
             setup["letter"] = None
-            context.user_data.pop("test_prompt_message_id", None)
+            await _clear_test_prompt(context, q.message.chat_id)
             matches = select_matching_countries(setup["countries"])
             others = select_remaining_countries(setup["countries"], matches)
             if not others:
@@ -460,7 +475,7 @@ async def cb_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop("test_subset", None)
         context.user_data.pop("test_session", None)
         context.user_data.pop("test_letter_pending", None)
-        context.user_data.pop("test_prompt_message_id", None)
+        await _clear_test_prompt(context, q.message.chat_id)
         await cleanup_preview_messages(update, context, "test", q.message.message_id)
         text = (
             f"📝 Тест — {continent}.\n"

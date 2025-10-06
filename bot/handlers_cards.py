@@ -38,6 +38,19 @@ from .subsets import (
 logger = logging.getLogger(__name__)
 
 
+async def _clear_card_prompt(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int
+) -> None:
+    """Delete the pending letter prompt message if it exists."""
+
+    prompt_id = context.user_data.pop("card_prompt_message_id", None)
+    if isinstance(prompt_id, int):
+        try:
+            await context.bot.delete_message(chat_id, prompt_id)
+        except (TelegramError, HTTPError) as exc:
+            logger.debug("Failed to delete cards letter prompt %s: %s", prompt_id, exc)
+
+
 async def _next_card(
     update: Update, context: ContextTypes.DEFAULT_TYPE, replace_message: bool = True
 ) -> None:
@@ -194,7 +207,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         context.user_data.pop("card_setup", None)
         context.user_data.pop("card_subset", None)
         context.user_data.pop("card_letter_pending", None)
-        context.user_data.pop("card_prompt_message_id", None)
+        await _clear_card_prompt(context, q.message.chat_id)
         try:
             await q.edit_message_text(
                 WELCOME,
@@ -215,7 +228,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             context.user_data.pop("card_setup", None)
             context.user_data.pop("card_subset", None)
             context.user_data.pop("card_letter_pending", None)
-            context.user_data.pop("card_prompt_message_id", None)
+            await _clear_card_prompt(context, q.message.chat_id)
             text = "📘 Флэш-карточки: выбери континент."
             try:
                 await q.edit_message_text(
@@ -235,7 +248,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         context.user_data.pop("card_subset", None)
         context.user_data.pop("card_letter_pending", None)
-        context.user_data.pop("card_prompt_message_id", None)
+        await _clear_card_prompt(context, q.message.chat_id)
         if target == "mode":
             text = (
                 f"📘 Флэш-карточки — {setup['continent']}.\n"
@@ -277,7 +290,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             setup["subcategory"] = None
             setup["letter"] = None
             await cleanup_preview_messages(update, context, "card", q.message.message_id)
-            context.user_data.pop("card_prompt_message_id", None)
+            await _clear_card_prompt(context, q.message.chat_id)
             subset = setup["countries"]
             title = (
                 f"{setup['continent']} — все страны ({len(subset)}):\n"
@@ -305,7 +318,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             setup["letter"] = None
             context.user_data.pop("card_subset", None)
             context.user_data.pop("card_letter_pending", None)
-            context.user_data.pop("card_prompt_message_id", None)
+            await _clear_card_prompt(context, q.message.chat_id)
             await cleanup_preview_messages(update, context, "card", q.message.message_id)
             text = (
                 f"📘 Флэш-карточки — {setup['continent']}.\n"
@@ -337,7 +350,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if option == "matching":
             setup["subcategory"] = "matching"
             setup["letter"] = None
-            context.user_data.pop("card_prompt_message_id", None)
+            await _clear_card_prompt(context, q.message.chat_id)
             matches = select_matching_countries(setup["countries"])
             if not matches:
                 text = (
@@ -376,13 +389,15 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             setup["letter"] = None
             context.user_data["card_letter_pending"] = True
             context.user_data.pop("card_subset", None)
+            await _clear_card_prompt(context, q.message.chat_id)
             text = (
                 f"📘 Флэш-карточки — {setup['continent']}.\n"
                 "Введите букву, на которую начинается столица."
             )
             try:
-                msg = await q.edit_message_text(
-                    text, reply_markup=cards_subcategories_kb()
+                msg = await context.bot.send_message(
+                    q.message.chat_id,
+                    text,
                 )
             except (TelegramError, HTTPError) as exc:
                 logger.warning("Failed to prompt for letter: %s", exc)
@@ -392,7 +407,7 @@ async def cb_cards(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if option == "other":
             setup["subcategory"] = "other"
             setup["letter"] = None
-            context.user_data.pop("card_prompt_message_id", None)
+            await _clear_card_prompt(context, q.message.chat_id)
             matches = select_matching_countries(setup["countries"])
             others = select_remaining_countries(setup["countries"], matches)
             if not others:
