@@ -3,7 +3,7 @@ import logging
 import asyncio
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -168,9 +168,9 @@ async def check_webhook(context: ContextTypes.DEFAULT_TYPE) -> None:
 class TelegramUpdate(BaseModel):
     update_id: int | None = None
 
-@app.get("/healthz")
+@app.api_route("/healthz", methods=["GET", "HEAD"], include_in_schema=False)
 async def healthz():
-    return {"ok": True}
+    return Response(status_code=200, media_type="application/json", content=b'{"ok": true}')
 
 
 @app.get("/")
