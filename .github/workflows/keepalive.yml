@@ -1,0 +1,20 @@
+name: keepalive-render
+on:
+  schedule:
+    - cron: "*/5 * * * *"     # каждые 5 минут
+  workflow_dispatch:          # возможность запустить руками из вкладки Actions
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Random jitter (0-240s) to desync with UptimeRobot
+        run: |
+          JITTER=$((RANDOM % 241))
+          echo "Sleeping for $JITTER seconds..."
+          sleep $JITTER
+      - name: Ping /healthz
+        env:
+          RENDER_URL: "https://countries-and-capitals.onrender.com"
+        run: |
+          set -e
+          curl -fsS -m 10 "$RENDER_URL/healthz" || true
