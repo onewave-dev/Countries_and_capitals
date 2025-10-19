@@ -1,21 +1,25 @@
 fix.patch
+admin/
 
-# Python
+# python
 __pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
+*.py[cod]
+*.log
 
-# Env
+# venv
+.venv/
+
+# env/config
 .env
-.env.local
+.env.*
+
+# data/cache
+*.sqlite3
+*.db
+*.jsonl
+/var/
+/tmp/
 
 # IDE
 .vscode/
 .idea/
-
-# OS
-.DS_Store
-
-
